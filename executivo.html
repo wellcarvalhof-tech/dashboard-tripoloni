@@ -212,9 +212,9 @@ function renderAll(){
 
   document.getElementById('title-all').textContent='Acumulado de producao — '+MAX_FMT;
   document.getElementById('kpis-all').innerHTML=
-    kpiCard('Semana atual',fmtM(wProd)+'t',wStart+' — '+MAX_FMT,wED>0?fmt(Math.round(wProd/wED)):0)+
-    kpiCard('Mes atual',fmtM(mProd)+'t',mLbl,mED>0?fmt(Math.round(mProd/mED)):0)+
-    kpiCard('Acumulado total',fmtM(tProd)+'t','Jan — Jun 2026',tED>0?fmt(Math.round(tProd/tED)):0);
+    kpiCard('Semana atual',fmtM(wProd)+'t',wStart+' — '+MAX_FMT,wED>0?Math.round(wProd/wED):0)+
+    kpiCard('Mes atual',fmtM(mProd)+'t',mLbl,mED>0?Math.round(mProd/mED):0)+
+    kpiCard('Acumulado total',fmtM(tProd)+'t','Jan — Jun 2026',tED>0?Math.round(tProd/tED):0);
 
   // Table
   var rows=OBRAS_ATIVAS.map(function(o){
@@ -376,7 +376,8 @@ try {
   buildStrip();
   renderAll();
 } catch(e){
-  console.error('Init error:',e);
+  console.error('Dashboard executivo init error:', e);
+  document.body.innerHTML += '<div style="padding:20px;color:red;font-family:monospace;background:#fff;margin:10px;border-radius:8px;border:1px solid red"><strong>Erro ao inicializar:</strong><br>' + e.message + '<br><small>' + (e.stack||'') + '</small></div>';
 }
 </script>
 </body>
