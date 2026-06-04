@@ -133,7 +133,23 @@ tr:hover td{background:#FAFBFC}
     <div class="tbl-wrap"><table id="tbl-lastday"></table></div>
   </div>
   <div class="card">
-    <div class="ct"><span class="dot" style="background:var(--teal)"></span>Acumulado por equipamento &mdash; Jan&ndash;Jun 2026</div>
+    <div class="ct"><span class="dot" style="background:var(--teal)"></span>Acumulado por equipamento</div>
+    <div class="ctrl" id="ctrl-accum" style="margin-bottom:10px">
+      <label>Periodo:</label>
+      <div class="seg">
+        <button class="active" onclick="setAccumPeriod('total',this)">Acumulado total</button>
+        <button onclick="setAccumPeriod('week',this)">Semana atual</button>
+        <button onclick="setAccumPeriod('month',this)">Mes atual</button>
+        <button onclick="setAccumPeriod('custom',this)">Personalizado</button>
+      </div>
+    </div>
+    <div id="accum-date-ctrl" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 0 10px 0">
+      <label style="font-size:11px;color:var(--muted)">De:</label>
+      <input type="date" id="accum-dt-start" style="font-size:14px;padding:4px 8px;border:1px solid var(--border);border-radius:5px;background:var(--white)">
+      <label style="font-size:11px;color:var(--muted)">Ate:</label>
+      <input type="date" id="accum-dt-end" style="font-size:14px;padding:4px 8px;border:1px solid var(--border);border-radius:5px;background:var(--white)">
+      <button onclick="applyAccumCustom()" style="font-size:12px;padding:5px 12px;background:var(--blue);color:#fff;border:none;border-radius:5px;cursor:pointer">Aplicar</button>
+    </div>
     <div class="tbl-wrap"><table id="tbl-accum"></table></div>
   </div>
 </div>
@@ -630,50 +646,127 @@ function renderLastDay() {
   rows1 += '<td><span class="badge '+bc(util)+'">'+util.toFixed(1)+'%</span></td><td>--</td></tr>';
   document.getElementById('tbl-lastday').innerHTML = th1+rows1+'</tbody>';
 
-  var acc, accEqs;
-  if(selObra === 'ALL') {
-    acc = {};
-    D.obras.forEach(function(o) {
-      var oAcc = D.accum_data[o] || {};
-      Object.keys(oAcc).forEach(function(es) {
-        if(!acc[es]) acc[es] = {prod:0,hrs:0,oc:0,dias:0};
-        acc[es].prod += oAcc[es].prod||0;
-        acc[es].hrs  += oAcc[es].hrs||0;
-        acc[es].oc   += oAcc[es].oc||0;
-        acc[es].dias += oAcc[es].dias||0;
-      });
-    });
-    accEqs = Object.keys(acc).sort();
-  } else {
-    acc = D.accum_data[selObra] || {};
-    accEqs = Object.keys(acc).sort();
+  // Render accum table via renderAccumTable (handles period filter)
+  if(selObra !== 'ALL') {
+    renderAccumTable();
   }
-  var maxAccProd = Math.max.apply(null, accEqs.map(function(es){return acc[es].prod||0;}).concat([1]));
-  var th2 = hd(th('Equipamento')+th('Prod. Acumulada (t)','r')+th('Hrs Trab.','r')+th('Hrs Ociosas','r')+th('Dias Apontados','r')+th('Media t/Dia','r')+th('Utilizacao')+th('Prod/H Acum. (t/h)','r'));
-  var rows2='', totAP=0, totAH=0, totAO=0, totAD=0;
-  accEqs.forEach(function(es) {
-    var d=acc[es]||{};
-    var u=(d.hrs||0)/((d.hrs||0)+(d.oc||0))*100||0;
-    var media=d.dias?(d.prod||0)/d.dias:0;
-    var bar=Math.round((d.prod||0)/maxAccProd*100);
-    totAP+=d.prod||0; totAH+=d.hrs||0; totAO+=d.oc||0; totAD+=d.dias||0;
-    rows2 += '<tr>';
-    rows2 += '<td><span class="es-tag">'+es+'</span></td>';
-    rows2 += '<td class="r" style="font-weight:600">'+fmt(d.prod)+'</td>';
-    rows2 += '<td class="r">'+fmtH(d.hrs)+' h</td>';
-    rows2 += '<td class="r">'+fmtH(d.oc)+' h</td>';
-    rows2 += '<td class="r">'+(d.dias||0)+'</td>';
-    rows2 += '<td class="r">'+fmt(media)+'</td>';
-    rows2 += '<td><span class="badge '+bc(u)+'">'+u.toFixed(1)+'%</span></td>';
-    var prodHAcum = d.hrs>0 ? (d.prod||0)/d.hrs : 0;
-    rows2 += '<td class="r" style="font-weight:600;color:var(--teal)">'+(prodHAcum>0?prodHAcum.toFixed(1):'--')+'</td>';
-    rows2 += '</tr>';
+  // For ALL mode, accum is handled by renderLastDayAll
+  var acc = D.accum_data[selObra] || {};
+  var accEqs = Object.keys(acc).sort();
+  var maxAccProd = Math.max.apply(null, accEqs.map(function(es){return (acc[es]||{}).prod||0;}).concat([1]));
+  // tbl-accum rendered by renderAccumTable()
+}
+
+var accumPeriod = 'total';
+var accumDtStart = '';
+var accumDtEnd = '';
+
+function setAccumPeriod(p, btn) {
+  accumPeriod = p;
+  btn.parentElement.querySelectorAll('button').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  var dc = document.getElementById('accum-date-ctrl');
+  if(dc) dc.style.display = p === 'custom' ? 'flex' : 'none';
+  renderAccumTable();
+}
+
+function applyAccumCustom() {
+  accumDtStart = document.getElementById('accum-dt-start').value;
+  accumDtEnd   = document.getElementById('accum-dt-end').value;
+  if(accumDtStart && accumDtEnd) renderAccumTable();
+}
+
+function getWeekStart() {
+  var maxDate = '';
+  D.obras.forEach(function(o){
+    var d = (D.obra_ponderado[o]||{}).last_date||'';
+    if(d > maxDate) maxDate = d;
   });
-  var tu = totAH/(totAH+totAO)*100||0;
-  var avgMedia = accEqs.length ? fmt(totAP / accEqs.length / (totAD/accEqs.length||1)) : '--';
-  var totProdHAcum = totAH>0 ? totAP/totAH : 0;
-  rows2 += '<tr class="total-row"><td>TOTAL ACUMULADO</td><td class="r">'+fmt(totAP)+'</td><td class="r">'+fmtH(totAH)+' h</td><td class="r">'+fmtH(totAO)+' h</td><td class="r">--</td><td class="r">'+avgMedia+'</td><td><span class="badge '+bc(tu)+'">'+tu.toFixed(1)+'%</span></td><td class="r" style="font-weight:700;color:var(--teal)">'+(totProdHAcum>0?totProdHAcum.toFixed(1):'--')+'</td></tr>';
-  document.getElementById('tbl-accum').innerHTML = th2+rows2+'</tbody>';
+  if(!maxDate) return '';
+  var dt = new Date(maxDate + 'T00:00:00');
+  dt.setDate(dt.getDate() - dt.getDay() + (dt.getDay()===0?-6:1));
+  return dt.toISOString().slice(0,10);
+}
+
+function getMonthStart() {
+  var maxDate = '';
+  D.obras.forEach(function(o){
+    var d = (D.obra_ponderado[o]||{}).last_date||'';
+    if(d > maxDate) maxDate = d;
+  });
+  return maxDate ? maxDate.slice(0,7) : '';
+}
+
+function renderAccumTable() {
+  if(selObra === 'ALL') { renderLastDayAll(); return; }
+  var o = selObra;
+  var eqMap = D.daily_obra_eq[o] || {};
+  var allEqs = Object.keys(eqMap).sort();
+  var weekStart  = getWeekStart();
+  var monthStart = getMonthStart();
+
+  function inRange(d) {
+    if(accumPeriod === 'week')   return weekStart  && d >= weekStart;
+    if(accumPeriod === 'month')  return monthStart && d.startsWith(monthStart);
+    if(accumPeriod === 'custom' && accumDtStart && accumDtEnd) return d >= accumDtStart && d <= accumDtEnd;
+    return true;
+  }
+
+  var h = '<thead><tr>' +
+    '<th>Equipamento</th>' +
+    '<th class="r">Producao (t)</th>' +
+    '<th class="r">Hrs Trab.</th>' +
+    '<th class="r">Hrs Ociosas</th>' +
+    '<th class="r">Dias Apont.</th>' +
+    '<th class="r">Media t/Dia</th>' +
+    '<th class="r">Prod/H Acum. (t/h)</th>' +
+    '</tr></thead><tbody>';
+
+  var totP=0,totH=0,totO=0;
+  allEqs.forEach(function(es) {
+    var days = eqMap[es] || {};
+    var p=0,hrs=0,oc=0,dias=0;
+    Object.keys(days).forEach(function(d) {
+      if(!inRange(d)) return;
+      p   += days[d].prod||0;
+      hrs += days[d].hrs||0;
+      oc  += days[d].oc||0;
+      if(days[d].prod > 0) dias++;
+    });
+    if(p===0 && hrs===0) return;
+    var ph    = hrs > 0 ? p/hrs : 0;
+    var media = dias > 0 ? Math.round(p/dias) : 0;
+    totP+=p; totH+=hrs; totO+=oc;
+    h += '<tr>';
+    h += '<td><span class="es-tag">'+es+'</span></td>';
+    h += '<td class="r" style="font-weight:600">'+fmt(p)+'</td>';
+    h += '<td class="r">'+fmtH(hrs)+' h</td>';
+    h += '<td class="r">'+fmtH(oc)+' h</td>';
+    h += '<td class="r">'+dias+'</td>';
+    h += '<td class="r">'+fmt(media)+'</td>';
+    h += '<td class="r" style="font-weight:600;color:var(--teal)">'+(ph>0?ph.toFixed(1):'--')+'</td>';
+    h += '</tr>';
+  });
+
+  var tph = totH > 0 ? totP/totH : 0;
+  var periodLabel = 'Acumulado total';
+  if(accumPeriod==='week')   periodLabel = 'Semana atual';
+  else if(accumPeriod==='month')  periodLabel = 'Mes atual';
+  else if(accumPeriod==='custom' && accumDtStart && accumDtEnd)
+    periodLabel = accumDtStart.split('-').reverse().join('/')+' a '+accumDtEnd.split('-').reverse().join('/');
+
+  h += '<tr class="total-row">';
+  h += '<td>'+periodLabel+'</td>';
+  h += '<td class="r">'+fmt(totP)+'</td>';
+  h += '<td class="r">'+fmtH(totH)+' h</td>';
+  h += '<td class="r">'+fmtH(totO)+' h</td>';
+  h += '<td class="r">--</td>';
+  h += '<td class="r">--</td>';
+  h += '<td class="r" style="font-weight:700;color:var(--teal)">'+(tph>0?tph.toFixed(1):'--')+'</td>';
+  h += '</tr>';
+
+  var el = document.getElementById('tbl-accum');
+  if(el) el.innerHTML = h+'</tbody>';
 }
 
 // RENDER: OBRA
