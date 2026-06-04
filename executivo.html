@@ -27,13 +27,14 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
 .main{padding:14px 16px 20px}
 
 /* KPI CARDS */
-.kpi3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
-.kpi{background:var(--white);border-radius:8px;border:1px solid var(--border);padding:14px 12px;text-align:center}
-.kl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
-.kv{font-size:22px;font-weight:700;color:var(--blue);line-height:1.1}
-.ks{font-size:11px;color:var(--muted);margin-top:3px}
-.kped{font-size:13px;font-weight:700;color:var(--teal);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
-.kped-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-top:3px}
+.kpi3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
+.kpi{background:var(--white);border-radius:8px;border:1px solid var(--border);padding:8px 6px;text-align:center}
+.kl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kv{font-size:15px;font-weight:700;color:var(--blue);line-height:1.1}
+.ks{font-size:8px;color:var(--muted);margin-top:1px}
+.kped{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px;padding-top:4px;border-top:0.5px solid var(--border)}
+.kped-val{font-size:11px;font-weight:700;color:var(--teal)}
+.kped-lbl{font-size:8px;color:var(--muted)}
 
 /* CARD */
 .card{background:var(--white);border-radius:8px;border:1px solid var(--border);padding:14px;margin-bottom:14px}
@@ -252,7 +253,7 @@ function renderAll(){
 
 function kpiCard(lbl,val,sub,ped){
   return '<div class="kpi"><div class="kl">'+lbl+'</div><div class="kv">'+val+'</div><div class="ks">'+sub+'</div>'+
-    '<div class="kped">'+fmt(ped)+' t/eq-dia</div><div class="kped-lbl">Prod/Equip-dia</div></div>';
+    '<div class="kped"><span class="kped-val">'+fmt(ped)+'</span><span class="kped-lbl">t/eq-dia</span></div></div>';
 }
 
 // ── VISAO OBRA ───────────────────────────────────────────────
