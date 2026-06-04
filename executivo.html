@@ -27,14 +27,32 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
 .main{padding:14px 16px 20px}
 
 /* KPI CARDS */
-.kpi3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
-.kpi{background:var(--white);border-radius:8px;border:1px solid var(--border);padding:8px 6px;text-align:center}
-.kl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.kv{font-size:15px;font-weight:700;color:var(--blue);line-height:1.1}
-.ks{font-size:8px;color:var(--muted);margin-top:1px}
-.kped{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px;padding-top:4px;border-top:0.5px solid var(--border)}
-.kped-val{font-size:11px;font-weight:700;color:var(--teal)}
-.kped-lbl{font-size:8px;color:var(--muted)}
+.kpi3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+
+/* Desktop: card com divisor vertical entre producao e t/eq-dia */
+.kpi{background:var(--white);border-radius:8px;border:1px solid var(--border);padding:12px 14px;display:flex;align-items:center;gap:12px}
+.kpi-left{flex:1}
+.kl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;font-weight:700}
+.kv{font-size:22px;font-weight:700;color:var(--blue);line-height:1.1}
+.ks{font-size:10px;color:var(--muted);margin-top:2px}
+.kpi-div{width:1px;height:36px;background:var(--border);flex-shrink:0}
+.kpi-right{text-align:right;flex-shrink:0}
+.kped-val{font-size:16px;font-weight:700;color:var(--teal)}
+.kped-lbl{font-size:9px;color:var(--muted)}
+
+/* Mobile: 3 cards compactos em linha */
+@media(max-width:600px){
+  .kpi3{gap:5px}
+  .kpi{padding:8px 6px;flex-direction:column;align-items:stretch;gap:0}
+  .kpi-left{flex:none}
+  .kl{font-size:8px;letter-spacing:.03em;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kv{font-size:16px}
+  .ks{font-size:7px;margin-top:1px}
+  .kpi-div{width:100%;height:0.5px;margin:5px 0 4px}
+  .kpi-right{text-align:left}
+  .kped-val{font-size:13px}
+  .kped-lbl{font-size:7px}
+}
 
 /* CARD */
 .card{background:var(--white);border-radius:8px;border:1px solid var(--border);padding:14px;margin-bottom:14px}
@@ -199,11 +217,14 @@ function renderAll(){
   document.getElementById('panel-obra').classList.remove('active');
 
   // KPIs totais
-  var wProd=0,mProd=0,tProd=0,wED=0,mED=0,tED=0;
+  var wProd=0,mProd=0,tProd=0,wED=0,mED=0,tED=0,dayProd=0,dayED=0;
   OBRAS_ATIVAS.forEach(function(o){
     var s=D.obra_summary_exec[o]||{};
     wProd+=s.week_prod||0; mProd+=s.month_prod||0; tProd+=s.total_prod||0;
     wED+=s.week_eq_dias||0; mED+=s.month_eq_dias||0; tED+=s.total_eq_dias||0;
+    // Producao do dia
+    var ld=D.last_day_data[o]||{};
+    Object.keys(ld).forEach(function(es){ dayProd+=ld[es].prod||0; dayED++; });
   });
 
   // Week/month label
@@ -213,9 +234,9 @@ function renderAll(){
 
   document.getElementById('title-all').textContent='Acumulado de producao — '+MAX_FMT;
   document.getElementById('kpis-all').innerHTML=
+    kpiCard('Producao do dia',fmt(dayProd)+'t',MAX_FMT,dayED>0?Math.round(dayProd/dayED):0)+
     kpiCard('Semana atual',fmtM(wProd)+'t',wStart+' — '+MAX_FMT,wED>0?Math.round(wProd/wED):0)+
-    kpiCard('Mes atual',fmtM(mProd)+'t',mLbl,mED>0?Math.round(mProd/mED):0)+
-    kpiCard('Acumulado total',fmtM(tProd)+'t','Jan — Jun 2026',tED>0?Math.round(tProd/tED):0);
+    kpiCard('Mes atual',fmtM(mProd)+'t',mLbl,mED>0?Math.round(mProd/mED):0);
 
   // Table
   var rows=OBRAS_ATIVAS.map(function(o){
@@ -252,8 +273,11 @@ function renderAll(){
 }
 
 function kpiCard(lbl,val,sub,ped){
-  return '<div class="kpi"><div class="kl">'+lbl+'</div><div class="kv">'+val+'</div><div class="ks">'+sub+'</div>'+
-    '<div class="kped"><span class="kped-val">'+fmt(ped)+'</span><span class="kped-lbl">t/eq-dia</span></div></div>';
+  return '<div class="kpi">' +
+    '<div class="kpi-left"><div class="kl">'+lbl+'</div><div class="kv">'+val+'</div><div class="ks">'+sub+'</div></div>' +
+    '<div class="kpi-div"></div>' +
+    '<div class="kpi-right"><div class="kped-val">'+fmt(ped)+'</div><div class="kped-lbl">t/eq-dia</div></div>' +
+    '</div>';
 }
 
 // ── VISAO OBRA ───────────────────────────────────────────────
@@ -270,10 +294,16 @@ function renderObra(){
   document.getElementById('title-obra').textContent=(OS[o]||o)+' — acumulado de producao';
   document.getElementById('ct-lastday').textContent=MAX_FMT;
 
+  // Producao do dia para a obra
+  var oLd=D.last_day_data[o]||{};
+  var oDayProd=0,oDayED=0;
+  Object.keys(oLd).forEach(function(es){oDayProd+=oLd[es].prod||0;oDayED++;});
+  var oDayPedEq=oDayED>0?Math.round(oDayProd/oDayED):0;
+
   document.getElementById('kpis-obra').innerHTML=
+    kpiCard('Producao do dia',fmt(oDayProd)+'t',MAX_FMT,oDayPedEq)+
     kpiCard('Semana atual',fmtM(s.week_prod||0)+'t',wStart+' — '+MAX_FMT,s.week_prod_eq_dia||0)+
-    kpiCard('Mes atual',fmtM(s.month_prod||0)+'t',mLbl,s.month_prod_eq_dia||0)+
-    kpiCard('Acumulado total',fmtM(s.total_prod||0)+'t','Jan — Jun 2026',s.total_prod_eq_dia||0);
+    kpiCard('Mes atual',fmtM(s.month_prod||0)+'t',mLbl,s.month_prod_eq_dia||0);
 
   // Last day table
   var ld=D.last_day_data[o]||{};
