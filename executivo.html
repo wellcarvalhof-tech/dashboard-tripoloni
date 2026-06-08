@@ -122,6 +122,10 @@ tr:hover td{background:#FAFBFC}
       <div class="ct"><span class="dot" style="background:var(--blue)"></span>Desempenho por equipamento &mdash; <span id="ct-lastday"></span></div>
       <div class="tw"><table id="tbl-lastday"></table></div>
     </div>
+    <div class="card" id="card-obra-sun" style="display:none">
+      <div class="ct"><span class="dot" style="background:var(--teal)"></span><span id="ct-obra-sun"></span></div>
+      <div class="tw"><table id="tbl-obra-sun"></table></div>
+    </div>
     <div class="card">
       <div class="ct"><span class="dot" style="background:var(--teal)"></span>Acumulado por equipamento</div>
       <div class="ctrl">
@@ -463,7 +467,28 @@ function renderObra(){
   var tu=totH/(totH+totO)*100||0;
   var tph=totH>0?totP/totH:0;
   h+='<tr class="total-row"><td>TOTAL DO DIA</td><td class="r">'+fmt(totP)+'</td><td class="r">'+fmtH(totH)+' h</td><td class="r">'+fmtH(totO)+' h</td><td class="r">--</td><td class="r">--</td><td class="r ph-val">'+tph.toFixed(1)+'</td><td><span class="badge '+bc(tu)+'">'+tu.toFixed(1)+'%</span></td></tr>';
-  document.getElementById('tbl-lastday').innerHTML=h+'</tbody>';
+  if(isMonday()) {
+    var wkndOb = getPrevWeekendDates();
+    var satFmtOb = wkndOb.sat.split('-').reverse().join('/');
+    var sunFmtOb = wkndOb.sun.split('-').reverse().join('/');
+    // Saturday table for this obra
+    document.getElementById('ct-lastday').textContent = 'Sabado — '+satFmtOb;
+    var satEqRows = getEqRowsForDate(o, wkndOb.sat);
+    document.getElementById('tbl-lastday').innerHTML = buildEqTableHTML(satEqRows, satFmtOb);
+    // Sunday table for this obra
+    var cardObSun = document.getElementById('card-obra-sun');
+    if(cardObSun) {
+      var sunEqRows = getEqRowsForDate(o, wkndOb.sun);
+      document.getElementById('ct-obra-sun').textContent = 'Domingo — '+sunFmtOb;
+      document.getElementById('tbl-obra-sun').innerHTML = buildEqTableHTML(sunEqRows, sunFmtOb);
+      cardObSun.style.display = 'block';
+    }
+  } else {
+    document.getElementById('ct-lastday').textContent = 'Desempenho por equipamento — '+MAX_FMT;
+    document.getElementById('tbl-lastday').innerHTML=h+'</tbody>';
+    var cardObSun2 = document.getElementById('card-obra-sun');
+    if(cardObSun2) cardObSun2.style.display = 'none';
+  }
 
   renderAccum();
 }
@@ -546,6 +571,35 @@ try {
   console.error('Dashboard executivo init error:', e);
   document.body.innerHTML += '<div style="padding:20px;color:red;font-family:monospace;background:#fff;margin:10px;border-radius:8px;border:1px solid red"><strong>Erro ao inicializar:</strong><br>' + e.message + '<br><small>' + (e.stack||'') + '</small></div>';
 }
+function getEqRowsForDate(obra, targetDate) {
+  var eqMap = D.daily_obra_eq[obra] || {};
+  var rows = [];
+  Object.keys(eqMap).sort().forEach(function(es) {
+    var d = (eqMap[es]||{})[targetDate];
+    if(d && (d.prod>0||d.hrs>0)) rows.push({es:es,prod:d.prod||0,hrs:d.hrs||0,oc:d.oc||0});
+  });
+  return rows;
+}
+
+function buildEqTableHTML(rows, dateLabel) {
+  if(!rows||rows.length===0) return '<p style="padding:10px;color:var(--muted);font-size:12px">Sem apontamentos em '+dateLabel+'</p>';
+  var totP=0,totH=0,totO=0;
+  rows.forEach(function(r){totP+=r.prod;totH+=r.hrs;totO+=r.oc;});
+  var totU=totH/(totH+totO)*100||0; var totPH=totH>0?totP/totH:0;
+  var h='<thead><tr>'+th('Equipamento')+th('Producao (t)','r')+th('Hrs Trab.','r')+th('Hrs Ociosas','r')+th('Prod/H (t/h)','r')+th('Utilizacao')+'</tr></thead><tbody>';
+  rows.forEach(function(r){
+    var u=(r.hrs||0)/((r.hrs||0)+(r.oc||0))*100||0;
+    var ph=r.hrs>0?r.prod/r.hrs:0;
+    h+='<tr><td><span class="es-tag">'+r.es+'</span></td>';
+    h+='<td class="r" style="font-weight:600">'+fmt(r.prod)+'</td>';
+    h+='<td class="r">'+fmtH(r.hrs)+' h</td><td class="r">'+fmtH(r.oc)+' h</td>';
+    h+='<td class="r" style="font-weight:600;color:var(--teal)">'+(ph>0?ph.toFixed(1):'--')+'</td>';
+    h+='<td><span class="badge '+bc(u)+'">'+u.toFixed(1)+'%</span></td></tr>';
+  });
+  h+='<tr class="total-row"><td>TOTAL</td><td class="r">'+fmt(totP)+'</td><td class="r">'+fmtH(totH)+' h</td><td class="r">'+fmtH(totO)+' h</td><td class="r" style="font-weight:700;color:var(--teal)">'+totPH.toFixed(1)+'</td><td><span class="badge '+bc(totU)+'">'+totU.toFixed(1)+'%</span></td></tr>';
+  return h+'</tbody>';
+}
+
 </script>
 </body>
 </html>
