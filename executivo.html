@@ -171,9 +171,34 @@ function initRefs(){
   WEEK_START = D.ref_dates.week_start;
   MONTH_START= D.ref_dates.month_start;
   MAX_FMT    = MAX_DATE.split('-').reverse().join('/');
-  OBRAS_ATIVAS = D.obras.filter(function(o){
-    return (D.obra_ponderado[o]||{}).last_date === MAX_DATE;
-  });
+  if(new Date().getDay() === 1) {
+    // Monday: show all obras that produced in previous week (Mon-Sun)
+    var prevMon = new Date();
+    prevMon.setDate(prevMon.getDate() - 7);
+    var prevMonStr = prevMon.getFullYear()+'-'+
+      String(prevMon.getMonth()+1).padStart(2,'0')+'-'+
+      String(prevMon.getDate()).padStart(2,'0');
+    var prevSunStr = MAX_DATE; // MAX_DATE on Monday = Sunday
+    // Actually MAX_DATE = last date with any data, could be Friday or Saturday
+    // Use getPrevWeekendDates().sun as the end of previous week
+    var wkndRef = getPrevWeekendDates();
+    var weekEnd = wkndRef.sun;
+    var weekStart = new Date(weekEnd+'T00:00:00');
+    weekStart.setDate(weekStart.getDate() - 6); // Previous Monday
+    var weekStartStr = weekStart.getFullYear()+'-'+
+      String(weekStart.getMonth()+1).padStart(2,'0')+'-'+
+      String(weekStart.getDate()).padStart(2,'0');
+    OBRAS_ATIVAS = D.obras.filter(function(o){
+      var daily = D.daily_obra[o] || {};
+      return Object.keys(daily).some(function(d){
+        return d >= weekStartStr && d <= weekEnd && (daily[d].prod||0) > 0;
+      });
+    });
+  } else {
+    OBRAS_ATIVAS = D.obras.filter(function(o){
+      return (D.obra_ponderado[o]||{}).last_date === MAX_DATE;
+    });
+  }
 }
 
 function buildStrip(){
@@ -187,7 +212,14 @@ function buildStrip(){
     var active=selObra===o?' active':'';
     html+='<div class="ocard'+active+'" onclick="selOb(this.dataset.obra)" data-obra="'+o+'">';
     html+='<div class="on">'+(OS[o]||o)+'</div>';
-    html+='<div class="ov">'+fmtM((D.obra_ponderado[o]||{}).prod_total||0)+'t</div></div>';
+    var _wp = isMonday() ? (function(){
+      var wkRef=getPrevWeekendDates();
+      var wkMon=new Date(wkRef.sun+'T00:00:00'); wkMon.setDate(wkMon.getDate()-6);
+      var wkMonStr=wkMon.getFullYear()+'-'+String(wkMon.getMonth()+1).padStart(2,'0')+'-'+String(wkMon.getDate()).padStart(2,'0');
+      var daily=D.daily_obra[o]||{};
+      return Object.keys(daily).reduce(function(a,d){return d>=wkMonStr&&d<=wkRef.sun?a+(daily[d].prod||0):a;},0);
+    })() : ((D.obra_ponderado[o]||{}).prod_total||0);
+    html+='<div class="ov">'+fmtM(_wp)+'t</div></div>';
   });
   document.getElementById('obra-strip').innerHTML=html;
 }
