@@ -332,19 +332,40 @@ function renderAll(){
   h+='<tr class="total-row"><td>TOTAL</td><td class="r">'+totEq+'</td><td class="r">'+fmt(totP)+'</td><td class="r">'+fmt(totProdEq)+'</td><td class="r">'+fmtH(totH)+' h</td><td class="r">'+fmtH(totO)+' h</td><td class="r ph-val">'+totPH.toFixed(1)+'</td><td><span class="badge '+bc(totU)+'">'+totU.toFixed(1)+'%</span></td></tr>';
 
   if(isMonday()) {
+    // Monday: show Sabado + Domingo tables with ALL obras that produced in prev week
     var wknd = getPrevWeekendDates();
     var satFmt = wknd.sat.split('-').reverse().join('/');
     var sunFmt = wknd.sun.split('-').reverse().join('/');
+
+    // Get start of previous week (last Monday)
+    var prevMonday = new Date();
+    prevMonday.setDate(prevMonday.getDate() - 7);
+    var prevMondayStr = prevMonday.getFullYear()+'-'+
+      String(prevMonday.getMonth()+1).padStart(2,'0')+'-'+
+      String(prevMonday.getDate()).padStart(2,'0');
+
+    // Find all obras that had production in prev week (Mon-Sun)
+    var obrasWithPrevWeek = D.obras.filter(function(o) {
+      var daily = D.daily_obra[o] || {};
+      return Object.keys(daily).some(function(d) {
+        return d >= prevMondayStr && d <= wknd.sun && (daily[d].prod||0) > 0;
+      });
+    });
+
     document.getElementById('ct-all-1').textContent = 'Sabado — '+satFmt;
-    var satRows = buildDayTableRows(wknd.sat, D.obras);
-    document.getElementById('tbl-all').innerHTML = buildDayTableHTML(satRows, satFmt);
+    var satRows = buildDayTableRows(wknd.sat, obrasWithPrevWeek);
+    // For obras with no sat production, show them with zeros if they produced in the week
+    var obrasNoSat = obrasWithPrevWeek.filter(function(o){
+      return !satRows.find(function(r){return r.o===o;});
+    });
+    obrasNoSat.forEach(function(o){ satRows.push({o:o,prod:0,hrs:0,oc:0,u:0,ph:0,nEq:0,prodEq:0}); });
+    document.getElementById('tbl-all').innerHTML = buildDayTableHTML(satRows.filter(function(r){return r.prod>0;}), satFmt);
+
     var card2 = document.getElementById('card-all-2');
-    var sunRows = buildDayTableRows(wknd.sun, D.obras);
-    if(sunRows.length > 0 || true) {
-      document.getElementById('ct-all-2').textContent = 'Domingo — '+sunFmt;
-      document.getElementById('tbl-all-2').innerHTML = buildDayTableHTML(sunRows, sunFmt);
-      card2.style.display = 'block';
-    }
+    var sunRows = buildDayTableRows(wknd.sun, obrasWithPrevWeek);
+    document.getElementById('ct-all-2').textContent = 'Domingo — '+sunFmt;
+    document.getElementById('tbl-all-2').innerHTML = buildDayTableHTML(sunRows, sunFmt);
+    card2.style.display = 'block';
   } else {
     document.getElementById('ct-all-1').textContent = 'Desempenho do dia por obra — '+MAX_FMT;
     document.getElementById('tbl-all').innerHTML=h+'</tbody>';
