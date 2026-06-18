@@ -56,6 +56,9 @@ select{font-size:16px;padding:6px 10px;border:1px solid var(--border);border-rad
 .msel-opt{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:13px;white-space:nowrap}
 .msel-opt:hover{background:#F1F3F5}
 .msel-opt input{cursor:pointer}
+.fchk-grp{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.fchk{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.fchk input{cursor:pointer;accent-color:var(--blue);width:14px;height:14px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .card{background:var(--white);border-radius:8px;border:1px solid var(--border);padding:14px;margin-bottom:12px}
 .card:last-child{margin-bottom:0}
@@ -182,6 +185,11 @@ tr:hover td{background:#FAFBFC}
       <button type="button" class="msel-btn" onclick="mselToggle('msel-eq-obra')" id="msel-eq-obra-btn">Todos os equipamentos</button>
       <div class="msel-panel" id="msel-eq-obra-panel"></div>
     </span>
+    <div class="vsep"></div>
+    <div class="fchk-grp">
+      <label class="fchk"><input type="checkbox" id="fHrsObra" onchange="fHrsObra=this.checked;renderObra()"> Excluir sem horas</label>
+      <label class="fchk"><input type="checkbox" id="fProdObra" onchange="fProdObra=this.checked;renderObra()"> Excluir sem producao</label>
+    </div>
   </div>
   <div class="g2">
     <div class="card" style="margin:0"><div class="ct"><span class="dot" style="background:var(--blue)"></span>Producao no periodo (t)</div><div class="cw" style="height:220px"><canvas id="cO1"></canvas></div></div>
@@ -206,6 +214,11 @@ tr:hover td{background:#FAFBFC}
       <button onclick="setV('eq','semanal',this)">Semanal</button>
       <button onclick="setV('eq','mensal',this)">Mensal</button>
     </div>
+    <div class="vsep"></div>
+    <div class="fchk-grp">
+      <label class="fchk"><input type="checkbox" id="fHrsEq" onchange="fHrsEq=this.checked;renderEq()"> Excluir sem horas</label>
+      <label class="fchk"><input type="checkbox" id="fProdEq" onchange="fProdEq=this.checked;renderEq()"> Excluir sem producao</label>
+    </div>
   </div>
   <div class="g2">
     <div class="card" style="margin:0"><div class="ct"><span class="dot" style="background:var(--blue)"></span>Producao</div><div class="cw" style="height:220px"><canvas id="cE1"></canvas></div></div>
@@ -228,6 +241,11 @@ tr:hover td{background:#FAFBFC}
         <div class="msel-panel" id="msel-eq-sc-panel"></div>
       </span>
     </span>
+    <div class="vsep"></div>
+    <div class="fchk-grp">
+      <label class="fchk"><input type="checkbox" id="fHrsSC" onchange="fHrsSC=this.checked;renderSC()"> Excluir sem horas</label>
+      <label class="fchk"><input type="checkbox" id="fProdSC" onchange="fProdSC=this.checked;renderSC()"> Excluir sem producao</label>
+    </div>
   </div>
   <div class="card" style="margin-bottom:12px"><div class="ct"><span class="dot" style="background:var(--blue)"></span>Producao acumulada &mdash; Curva S</div><div class="cw" style="height:300px"><canvas id="cSC1"></canvas></div></div>
   <div class="card"><div class="ct"><span class="dot" style="background:var(--teal)"></span>Producao diaria + media movel 7 dias</div><div class="cw" style="height:190px"><canvas id="cSC2"></canvas></div></div>
@@ -283,6 +301,10 @@ var selEqSC = ['ALL'];   // array de equipamentos selecionados na aba Avanco Acu
 var mObra=[1,2,3,4,5,6], mEq=[1,2,3,4,5,6], mCmp=[1,2,3,4,5,6];
 var vObra='diario', vEq='diario', scMode='obra', cmpMetric='prod';
 var CH = {};
+// Flags de filtro por aba (reativas ao periodo selecionado)
+var fHrsObra=false, fProdObra=false; // Producao da Obra
+var fHrsEq=false,   fProdEq=false;   // Por Equipamento
+var fHrsSC=false,   fProdSC=false;   // Avanco Acumulado
 
 function fmt(n) {
   var v = Math.round(n||0);
@@ -509,6 +531,24 @@ document.addEventListener('click', function(e) {
   }
 });
 
+
+// ── Filtro de equipamentos por periodo ───────────────────────────────────────
+// Dado uma lista de equipamentos, remove os que nao atendem aos criterios
+// de filtro no periodo de meses selecionado. Usa obra_eq_mensal como fonte.
+function filtrarEqs(eqList, obra, meses, fHrs, fProd) {
+  if(!fHrs && !fProd) return eqList;
+  return eqList.filter(function(es) {
+    var totalHrs = 0, totalProd = 0;
+    meses.forEach(function(m) {
+      var v = ((D.obra_eq_mensal[obra]||{})[es]||{})[String(m)]||{};
+      totalHrs  += v.hrs  || 0;
+      totalProd += v.prod || 0;
+    });
+    if(fHrs  && totalHrs  === 0) return false;
+    if(fProd && totalProd === 0) return false;
+    return true;
+  });
+}
 
 function weekKey(d) {
   var dt = new Date(d+'T00:00:00');
@@ -987,6 +1027,9 @@ function renderObra() {
   var allEqs = D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos : [];
   var pickedEqs = selEqObra.includes('ALL') ? allEqs : selEqObra.filter(function(x){ return allEqs.includes(x); });
   if(!pickedEqs.length) pickedEqs = allEqs;
+  // Aplica filtros de horas/producao zeradas sobre o periodo selecionado
+  pickedEqs = filtrarEqs(pickedEqs, selObra, mObra, fHrsObra, fProdObra);
+  if(!pickedEqs.length) pickedEqs = [];
 
   // cO1/cO2: soma diaria dos equipamentos selecionados (ou da obra toda se "Todos")
   var dm;
@@ -1026,6 +1069,8 @@ function renderObra() {
 function renderEq() {
   var eqList = selEqDet.length ? selEqDet : (D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos.slice(0,1) : []);
   if(!eqList.length) return;
+  // Aplica filtros de horas/producao zeradas sobre o periodo selecionado
+  eqList = filtrarEqs(eqList, selObra, mEq, fHrsEq, fProdEq);
 
   // cE1: producao, uma linha por equipamento selecionado
   var dailyByEq = D.daily_obra_eq[selObra] || {};
@@ -1100,6 +1145,10 @@ function renderSC() {
     var eqs = D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos : [];
     var tgt = selEqSC.includes('ALL') ? eqs : selEqSC.filter(function(x){ return eqs.includes(x); });
     if(!tgt.length) tgt = eqs;
+    // Aplica filtros de horas/producao zeradas (usando todos os meses como periodo
+    // pois a aba Avanco Acumulado nao tem seletor de pills por mes)
+    tgt = filtrarEqs(tgt, selObra, MESES, fHrsSC, fProdSC);
+    if(!tgt.length) tgt = [];
     var eqDM = D.daily_obra_eq[selObra]||{};
     var allDates = [];
     Object.values(eqDM).forEach(function(m){Object.keys(m).forEach(function(d){if(!allDates.includes(d))allDates.push(d);});});
