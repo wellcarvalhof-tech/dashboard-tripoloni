@@ -48,6 +48,14 @@ select{font-size:16px;padding:6px 10px;border:1px solid var(--border);border-rad
 .pill{padding:6px 11px;font-size:13px;border:1px solid var(--border);border-radius:10px;cursor:pointer;background:var(--white);color:var(--muted);transition:.1s;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .pill.sel{background:var(--blue);color:#fff;border-color:var(--blue)}
 .vsep{width:1px;height:22px;background:var(--border);margin:0 2px}
+.msel{position:relative;display:inline-block}
+.msel-btn{font-size:14px;padding:6px 10px;border:1px solid var(--border);border-radius:5px;background:var(--white);cursor:pointer;color:var(--text);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.msel-btn:after{content:'▾';font-size:10px;color:var(--muted)}
+.msel-panel{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:var(--white);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.12);padding:6px;min-width:200px;max-height:260px;overflow-y:auto}
+.msel-panel.open{display:block}
+.msel-opt{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:13px;white-space:nowrap}
+.msel-opt:hover{background:#F1F3F5}
+.msel-opt input{cursor:pointer}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .card{background:var(--white);border-radius:8px;border:1px solid var(--border);padding:14px;margin-bottom:12px}
 .card:last-child{margin-bottom:0}
@@ -170,18 +178,25 @@ tr:hover td{background:#FAFBFC}
     </div>
     <div class="vsep"></div>
     <label>Equip.:</label>
-    <select id="sel-eq-obra" onchange="renderObra()"><option value="ALL">Todos</option></select>
+    <span class="msel" id="msel-eq-obra">
+      <button type="button" class="msel-btn" onclick="mselToggle('msel-eq-obra')" id="msel-eq-obra-btn">Todos os equipamentos</button>
+      <div class="msel-panel" id="msel-eq-obra-panel"></div>
+    </span>
   </div>
   <div class="g2">
     <div class="card" style="margin:0"><div class="ct"><span class="dot" style="background:var(--blue)"></span>Producao no periodo (t)</div><div class="cw" style="height:220px"><canvas id="cO1"></canvas></div></div>
     <div class="card" style="margin:0"><div class="ct"><span class="dot" style="background:var(--teal)"></span>Horas trabalhadas vs. ociosas</div><div class="cw" style="height:220px"><canvas id="cO2"></canvas></div></div>
   </div>
-  <div class="card" style="margin-top:12px"><div class="ct"><span class="dot" style="background:var(--purple)"></span>Producao por equipamento x mes</div><div class="cw" style="height:190px"><canvas id="cO3"></canvas></div></div>
+  <div class="card" style="margin-top:12px"><div class="ct"><span class="dot" style="background:var(--purple)"></span>Producao por equipamento x periodo</div><div class="cw" style="height:190px"><canvas id="cO3"></canvas></div></div>
 </div>
 
 <div id="tab-equipamento" class="panel">
   <div class="ctrl">
-    <label>Equip.:</label><select id="sel-eq-det" onchange="renderEq()"></select>
+    <label>Equip.:</label>
+    <span class="msel" id="msel-eq-det">
+      <button type="button" class="msel-btn" onclick="mselToggle('msel-eq-det')" id="msel-eq-det-btn">Selecione</button>
+      <div class="msel-panel" id="msel-eq-det-panel"></div>
+    </span>
     <div class="vsep"></div>
     <label>Periodo:</label><div class="pill-row" id="pills-eq"></div>
     <div class="vsep"></div>
@@ -208,7 +223,10 @@ tr:hover td{background:#FAFBFC}
     </div>
     <span id="sc-eq-ctrl" style="display:none">
       <span class="vsep"></span><label>Equip.:</label>
-      <select id="sel-eq-sc" onchange="renderSC()"></select>
+      <span class="msel" id="msel-eq-sc">
+        <button type="button" class="msel-btn" onclick="mselToggle('msel-eq-sc')" id="msel-eq-sc-btn">Todos os equipamentos</button>
+        <div class="msel-panel" id="msel-eq-sc-panel"></div>
+      </span>
     </span>
   </div>
   <div class="card" style="margin-bottom:12px"><div class="ct"><span class="dot" style="background:var(--blue)"></span>Producao acumulada &mdash; Curva S</div><div class="cw" style="height:300px"><canvas id="cSC1"></canvas></div></div>
@@ -259,6 +277,9 @@ var MESES = [1,2,3,4,5,6];
 var COLS = ['#1A5276','#0E6655','#B7770D','#6C3483','#117A65','#922B21','#1B4F72','#784212','#1A7A4A','#5B2C6F'];
 
 var selObra = D.obras[4];
+var selEqObra = ['ALL']; // array de equipamentos selecionados na aba Producao da Obra
+var selEqDet = [];       // array de equipamentos selecionados na aba Por Equipamento
+var selEqSC = ['ALL'];   // array de equipamentos selecionados na aba Avanco Acumulado
 var mObra=[1,2,3,4,5,6], mEq=[1,2,3,4,5,6], mCmp=[1,2,3,4,5,6];
 var vObra='diario', vEq='diario', scMode='obra', cmpMetric='prod';
 var CH = {};
@@ -417,18 +438,77 @@ function tgCmp(m) { mCmp=tgM(mCmp,m); buildPills('pills-cmp',mCmp,'tgCmp'); rend
 
 function popEqSels() {
   var eqs = (selObra !== 'ALL' && D.obra_summary[selObra]) ? D.obra_summary[selObra].equipamentos : [];
-  ['sel-eq-obra','sel-eq-det','sel-eq-sc'].forEach(function(id) {
-    var el = document.getElementById(id);
-    var pv = el.value;
-    el.innerHTML = (id==='sel-eq-obra') ? '<option value="ALL">Todos os equipamentos</option>' : '';
-    eqs.forEach(function(es) {
-      var o = document.createElement('option');
-      o.value = es; o.textContent = es;
-      el.appendChild(o);
-    });
-    if(eqs.includes(pv)) el.value = pv;
-  });
+  // Reseta selecoes se a lista de equipamentos disponiveis mudou (troca de obra)
+  selEqObra = selEqObra.filter(function(x){ return x==='ALL' || eqs.includes(x); });
+  if(!selEqObra.length) selEqObra = ['ALL'];
+  selEqSC = selEqSC.filter(function(x){ return x==='ALL' || eqs.includes(x); });
+  if(!selEqSC.length) selEqSC = ['ALL'];
+  selEqDet = selEqDet.filter(function(x){ return eqs.includes(x); });
+  if(!selEqDet.length && eqs.length) selEqDet = [eqs[0]];
+
+  buildMsel('msel-eq-obra', eqs, selEqObra, true, function(newSel){ selEqObra = newSel; renderObra(); });
+  buildMsel('msel-eq-det', eqs, selEqDet, false, function(newSel){ selEqDet = newSel; renderEq(); });
+  buildMsel('msel-eq-sc', eqs, selEqSC, true, function(newSel){ selEqSC = newSel; renderSC(); });
 }
+
+// ── Componente de checkbox-dropdown para selecao multipla de equipamentos ──
+function mselLabel(sel, eqs, hasAll) {
+  if(hasAll && (sel.includes('ALL') || !sel.length)) return 'Todos os equipamentos';
+  if(!sel.length) return 'Selecione';
+  if(sel.length === 1) return sel[0];
+  return sel.length + ' equipamentos';
+}
+
+function buildMsel(baseId, eqs, currentSel, hasAll, onChange) {
+  var panel = document.getElementById(baseId+'-panel');
+  var btn = document.getElementById(baseId+'-btn');
+  if(!panel || !btn) return;
+  btn.textContent = mselLabel(currentSel, eqs, hasAll);
+  var html = '';
+  if(hasAll) {
+    html += '<label class="msel-opt"><input type="checkbox" '+(currentSel.includes('ALL')?'checked':'')+' onchange="mselPick(\''+baseId+'\',\'ALL\',this.checked)"> Todos os equipamentos</label>';
+  }
+  eqs.forEach(function(es) {
+    var checked = currentSel.includes(es) && !(hasAll && currentSel.includes('ALL'));
+    html += '<label class="msel-opt"><input type="checkbox" '+(checked?'checked':'')+' onchange="mselPick(\''+baseId+'\',\''+es+'\',this.checked)"> '+es+'</label>';
+  });
+  panel.innerHTML = html;
+  panel.dataset.eqs = JSON.stringify(eqs);
+  panel.dataset.hasAll = hasAll ? '1' : '0';
+  panel._onChange = onChange;
+  panel._currentSel = currentSel;
+}
+
+function mselPick(baseId, value, checked) {
+  var panel = document.getElementById(baseId+'-panel');
+  var eqs = JSON.parse(panel.dataset.eqs||'[]');
+  var hasAll = panel.dataset.hasAll === '1';
+  var sel = panel._currentSel.slice();
+  if(value === 'ALL') {
+    sel = checked ? ['ALL'] : [];
+  } else {
+    sel = sel.filter(function(x){ return x !== 'ALL'; });
+    if(checked) { if(!sel.includes(value)) sel.push(value); }
+    else { sel = sel.filter(function(x){ return x !== value; }); }
+  }
+  if(!sel.length) sel = hasAll ? ['ALL'] : (eqs.length ? [eqs[0]] : []);
+  buildMsel(baseId, eqs, sel, hasAll, panel._onChange);
+  panel._onChange(sel);
+}
+
+function mselToggle(baseId) {
+  var panel = document.getElementById(baseId+'-panel');
+  var isOpen = panel.classList.contains('open');
+  document.querySelectorAll('.msel-panel.open').forEach(function(p){ p.classList.remove('open'); });
+  if(!isOpen) panel.classList.add('open');
+}
+
+document.addEventListener('click', function(e) {
+  if(!e.target.closest('.msel')) {
+    document.querySelectorAll('.msel-panel.open').forEach(function(p){ p.classList.remove('open'); });
+  }
+});
+
 
 function weekKey(d) {
   var dt = new Date(d+'T00:00:00');
@@ -477,6 +557,47 @@ function agg(dayMap, meses, view) {
   };
 }
 
+// Agrega producao por periodo (mesma granularidade de agg()) para varios
+// equipamentos simultaneamente — usado no grafico "Producao por equipamento x periodo"
+function aggMultiEq(dailyByEq, eqList, meses, view) {
+  // Bucket key function matches agg()'s own bucketing exactly
+  function bucketKey(dateStr) {
+    if(view==='semanal') {
+      var dt=new Date(dateStr+'T00:00:00'), day=dt.getDay()||7;
+      dt.setDate(dt.getDate()+4-day);
+      var y=dt.getFullYear(), wn=Math.ceil(((dt-new Date(y,0,1))/864e5+1)/7);
+      return y+'-W'+String(wn).padStart(2,'0');
+    }
+    if(view==='mensal') return dateStr.split('-')[1];
+    return dateStr; // diario
+  }
+  function bucketLabel(key) {
+    if(view==='semanal') return weekLabel(key);
+    if(view==='mensal') return ML[+key]+'/26';
+    return key.slice(5).split('-').reverse().join('/');
+  }
+
+  var bucketSet = {};
+  var perEq = {}; // es -> {bucketKey: prod}
+  eqList.forEach(function(es) {
+    perEq[es] = {};
+    var days = (dailyByEq[es]||{});
+    Object.keys(days).forEach(function(d) {
+      if(!meses.includes(+d.split('-')[1])) return;
+      var k = bucketKey(d);
+      bucketSet[k] = true;
+      perEq[es][k] = (perEq[es][k]||0) + (days[d].prod||0);
+    });
+  });
+
+  var sortedKeys = Object.keys(bucketSet).sort();
+  var labels = sortedKeys.map(bucketLabel);
+  var datasets = eqList.map(function(es) {
+    return { es: es, data: sortedKeys.map(function(k){ return perEq[es][k]||0; }) };
+  });
+  return { labels: labels, datasets: datasets };
+}
+
 function mkBar(id,labels,data,color,yLabel) {
   dc(id);
   CH[id]=new Chart(document.getElementById(id),{
@@ -496,6 +617,27 @@ function mkStackBar(id,labels,d1,d2,l1,l2) {
       plugins:{legend:{display:true,position:'top',labels:{font:{size:10}}}},
       scales:{x:{stacked:true,ticks:{autoSkip:true,maxTicksLimit:18,font:{size:9},maxRotation:45}},
               y:{stacked:true,title:{display:true,text:'horas',font:{size:10}}}}}
+  });
+}
+
+// Mesmo grafico empilhado, mas convertendo horas em percentual do total
+// (trabalhada% + ociosa% = 100% em cada barra)
+function mkStackBarPct(id,labels,d1,d2,l1,l2) {
+  var pct1=[], pct2=[];
+  for(var i=0;i<labels.length;i++){
+    var t=(d1[i]||0), o=(d2[i]||0), tot=t+o;
+    pct1.push(tot>0 ? +( (t/tot*100).toFixed(1) ) : 0);
+    pct2.push(tot>0 ? +( (o/tot*100).toFixed(1) ) : 0);
+  }
+  dc(id);
+  CH[id]=new Chart(document.getElementById(id),{
+    type:'bar',
+    data:{labels:labels,datasets:[{label:l1,data:pct1,backgroundColor:'#0E655577',stack:'s'},{label:l2,data:pct2,backgroundColor:'#B7770D66',stack:'s'}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'top',labels:{font:{size:10}}},
+        tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+ctx.parsed.y.toFixed(1)+'%';}}}},
+      scales:{x:{stacked:true,ticks:{autoSkip:true,maxTicksLimit:18,font:{size:9},maxRotation:45}},
+              y:{stacked:true,min:0,max:100,title:{display:true,text:'% do periodo',font:{size:10}},ticks:{callback:function(v){return v+'%';}}}}}
   });
 }
 
@@ -824,57 +966,101 @@ function renderObra() {
     });
     var ag = agg(merged, mObra, vObra);
     mkBar('cO1',ag.labels,ag.prod,'#16297A99','toneladas (t)');
-    mkStackBar('cO2',ag.labels,ag.hrs,ag.oc,'Trabalhadas (h)','Ociosas (h)');
-    // Stacked by obra
-    var mL = mObra.map(function(m){return ML[m]+'/26';});
+    mkStackBarPct('cO2',ag.labels,ag.hrs,ag.oc,'Trabalhadas (%)','Ociosas (%)');
+    // Producao por obra, na mesma escala de tempo (vObra) selecionada
+    var dailyByObra = {};
+    D.obras.forEach(function(o){ dailyByObra[o] = D.daily_obra[o]||{}; });
+    var aggO = aggMultiEq(dailyByObra, D.obras, mObra, vObra);
     dc('cO3');
     CH['cO3'] = new Chart(document.getElementById('cO3'),{
-      type:'bar',
-      data:{labels:mL,datasets:D.obras.map(function(o,i){
-        return {label:OS[o]||o,data:mObra.map(function(m){return ((D.obra_mensal[o]||{})[m]||{}).prod||0;}),backgroundColor:COLS[i%COLS.length]+'99',borderWidth:0};
+      type:'line',
+      data:{labels:aggO.labels,datasets:aggO.datasets.map(function(ds,i){
+        return {label:OS[ds.es]||ds.es,data:ds.data,borderColor:COLS[i%COLS.length],backgroundColor:COLS[i%COLS.length]+'22',borderWidth:2,tension:0.25,pointRadius:2,fill:false};
       })},
       options:{responsive:true,maintainAspectRatio:false,
         plugins:{legend:{display:true,position:'right',labels:{font:{size:9},boxWidth:10}}},
-        scales:{x:{stacked:true,ticks:{font:{size:10}}},y:{stacked:true,title:{display:true,text:'toneladas',font:{size:10}}}}}
+        scales:{x:{ticks:{autoSkip:true,maxTicksLimit:18,font:{size:9},maxRotation:45}},y:{title:{display:true,text:'toneladas',font:{size:10}}}}}
     });
     return;
   }
-  var selEq = document.getElementById('sel-eq-obra').value;
-  var dm = selEq==='ALL' ? (D.daily_obra[selObra]||{}) : ((D.daily_obra_eq[selObra]||{})[selEq]||{});
+  // Determina quais equipamentos estao efetivamente selecionados
+  var allEqs = D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos : [];
+  var pickedEqs = selEqObra.includes('ALL') ? allEqs : selEqObra.filter(function(x){ return allEqs.includes(x); });
+  if(!pickedEqs.length) pickedEqs = allEqs;
+
+  // cO1/cO2: soma diaria dos equipamentos selecionados (ou da obra toda se "Todos")
+  var dm;
+  if(selEqObra.includes('ALL')) {
+    dm = D.daily_obra[selObra] || {};
+  } else {
+    dm = {};
+    pickedEqs.forEach(function(es) {
+      Object.entries((D.daily_obra_eq[selObra]||{})[es]||{}).forEach(function(e) {
+        if(!dm[e[0]]) dm[e[0]] = {prod:0,hrs:0,oc:0};
+        dm[e[0]].prod += e[1].prod||0;
+        dm[e[0]].hrs  += e[1].hrs||0;
+        dm[e[0]].oc   += e[1].oc||0;
+      });
+    });
+  }
   var ag = agg(dm,mObra,vObra);
   mkBar('cO1',ag.labels,ag.prod,'#1A527699','toneladas (t)');
-  mkStackBar('cO2',ag.labels,ag.hrs,ag.oc,'Trabalhadas (h)','Ociosas (h)');
-  var eqs = D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos : [];
-  var mL = mObra.map(function(m){return ML[m]+'/26';});
+  mkStackBarPct('cO2',ag.labels,ag.hrs,ag.oc,'Trabalhadas (%)','Ociosas (%)');
+  // Producao por equipamento, na mesma escala de tempo (vObra) selecionada,
+  // restrita aos equipamentos escolhidos no checkbox
+  var dailyByEq = D.daily_obra_eq[selObra] || {};
+  var aggE = aggMultiEq(dailyByEq, pickedEqs, mObra, vObra);
   dc('cO3');
   CH['cO3'] = new Chart(document.getElementById('cO3'),{
-    type:'bar',
-    data:{labels:mL,datasets:eqs.map(function(es,i){
-      return {label:es,data:mObra.map(function(m){return (((D.obra_eq_mensal[selObra]||{})[es]||{})[m]||{}).prod||0;}),backgroundColor:COLS[i%COLS.length]+'99',borderWidth:0};
+    type:'line',
+    data:{labels:aggE.labels,datasets:aggE.datasets.map(function(ds,i){
+      return {label:ds.es,data:ds.data,borderColor:COLS[i%COLS.length],backgroundColor:COLS[i%COLS.length]+'22',borderWidth:2,tension:0.25,pointRadius:2,fill:false};
     })},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:true,position:'right',labels:{font:{size:9},boxWidth:10}}},
-      scales:{x:{stacked:true,ticks:{font:{size:10}}},y:{stacked:true,title:{display:true,text:'toneladas',font:{size:10}}}}}
+      scales:{x:{ticks:{autoSkip:true,maxTicksLimit:18,font:{size:9},maxRotation:45}},y:{title:{display:true,text:'toneladas',font:{size:10}}}}}
   });
 }
 
 // RENDER: EQUIPAMENTO
 function renderEq() {
-  var es = document.getElementById('sel-eq-det').value;
-  if(!es) return;
-  var dm = (D.daily_obra_eq[selObra]||{})[es]||{};
-  var ag = agg(dm,mEq,vEq);
+  var eqList = selEqDet.length ? selEqDet : (D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos.slice(0,1) : []);
+  if(!eqList.length) return;
+
+  // cE1: producao, uma linha por equipamento selecionado
+  var dailyByEq = D.daily_obra_eq[selObra] || {};
+  var aggE = aggMultiEq(dailyByEq, eqList, mEq, vEq);
   dc('cE1');
   CH['cE1'] = new Chart(document.getElementById('cE1'),{
     type:'line',
-    data:{labels:ag.labels,datasets:[{label:'Producao (t)',data:ag.prod,borderColor:'#1A5276',backgroundColor:'#1A527222',borderWidth:2,pointRadius:vEq==='diario'?0:4,tension:.3,fill:true}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    data:{labels:aggE.labels,datasets:aggE.datasets.map(function(ds,i){
+      return {label:ds.es,data:ds.data,borderColor:COLS[i%COLS.length],backgroundColor:COLS[i%COLS.length]+'22',borderWidth:2,pointRadius:vEq==='diario'?0:3,tension:.3,fill:eqList.length===1};
+    })},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:eqList.length>1,position:'right',labels:{font:{size:9},boxWidth:10}}},
       scales:{x:{ticks:{autoSkip:true,maxTicksLimit:18,font:{size:9},maxRotation:45}},y:{title:{display:true,text:'toneladas',font:{size:10}}}}}
   });
-  mkStackBar('cE2',ag.labels,ag.hrs,ag.oc,'Trabalhadas (h)','Ociosas (h)');
+
+  // cE2 e tabela mensal: soma agregada dos equipamentos selecionados
+  var dm = {};
+  eqList.forEach(function(es) {
+    Object.entries(dailyByEq[es]||{}).forEach(function(e) {
+      if(!dm[e[0]]) dm[e[0]] = {prod:0,hrs:0,oc:0};
+      dm[e[0]].prod += e[1].prod||0;
+      dm[e[0]].hrs  += e[1].hrs||0;
+      dm[e[0]].oc   += e[1].oc||0;
+    });
+  });
+  var ag = agg(dm,mEq,vEq);
+  mkStackBarPct('cE2',ag.labels,ag.hrs,ag.oc,'Trabalhadas (%)','Ociosas (%)');
+
   var rows='', tp=0, thr=0, to=0;
   mEq.forEach(function(m) {
-    var d=((D.obra_eq_mensal[selObra]||{})[es]||{})[m]||{};
+    var d = {prod:0,hrs:0,oc:0};
+    eqList.forEach(function(es) {
+      var v = ((D.obra_eq_mensal[selObra]||{})[es]||{})[m]||{};
+      d.prod += v.prod||0; d.hrs += v.hrs||0; d.oc += v.oc||0;
+    });
     var u=(d.hrs||0)/((d.hrs||0)+(d.oc||0))*100||0;
     tp+=d.prod||0; thr+=d.hrs||0; to+=d.oc||0;
     rows += '<tr><td>'+ML[m]+'/2026</td><td class="r" style="font-weight:600">'+(d.prod?fmt(d.prod):'--')+'</td><td class="r">'+(d.hrs?fmtH(d.hrs)+' h':'--')+'</td><td class="r">'+(d.oc?fmtH(d.oc)+' h':'--')+'</td><td><span class="badge '+bc(u)+'">'+(d.prod||d.hrs?u.toFixed(1)+'%':'--')+'</span></td></tr>';
@@ -912,8 +1098,8 @@ function renderSC() {
     CH['cSC2']=new Chart(document.getElementById('cSC2'),{type:'bar',data:{labels:lbl,datasets:[{label:'Diario (t)',data:daily,backgroundColor:'#1A527655',borderWidth:0,order:2},{label:'Media 7d',data:ma7,type:'line',borderColor:'#B7770D',borderWidth:2,pointRadius:0,tension:.4,fill:false,order:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{font:{size:10}}}},scales:{x:{ticks:{autoSkip:true,maxTicksLimit:16,font:{size:9},maxRotation:45}},y:{title:{display:true,text:'toneladas',font:{size:10}}}}}});
   } else {
     var eqs = D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos : [];
-    var selEs = document.getElementById('sel-eq-sc').value;
-    var tgt = selEs ? [selEs] : eqs;
+    var tgt = selEqSC.includes('ALL') ? eqs : selEqSC.filter(function(x){ return eqs.includes(x); });
+    if(!tgt.length) tgt = eqs;
     var eqDM = D.daily_obra_eq[selObra]||{};
     var allDates = [];
     Object.values(eqDM).forEach(function(m){Object.keys(m).forEach(function(d){if(!allDates.includes(d))allDates.push(d);});});
@@ -922,11 +1108,14 @@ function renderSC() {
     var ds=tgt.map(function(es,i){var acc2=0;var em=eqDM[es]||{};return{label:es,data:allDates.map(function(d){acc2+=em[d]?em[d].prod||0:0;return acc2;}),borderColor:COLS[i%COLS.length],borderWidth:2,pointRadius:0,tension:.4,fill:false};});
     dc('cSC1');
     CH['cSC1']=new Chart(document.getElementById('cSC1'),{type:'line',data:{labels:lbl2,datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'right',labels:{font:{size:9},boxWidth:10}}},scales:{x:{ticks:{autoSkip:true,maxTicksLimit:16,font:{size:9},maxRotation:45}},y:{title:{display:true,text:'toneladas acumuladas',font:{size:10}}}}}});
-    var em2=eqDM[tgt[0]]||{};
-    var daily2=allDates.map(function(d){return em2[d]?em2[d].prod||0:0;});
+    // cSC2: soma diaria dos equipamentos selecionados (ou 1 se so um escolhido)
+    var daily2=allDates.map(function(d){
+      var s=0; tgt.forEach(function(es){var em=eqDM[es]||{}; s+=em[d]?em[d].prod||0:0;}); return s;
+    });
     var ma72=daily2.map(function(_,i){var s=daily2.slice(Math.max(0,i-6),i+1);return s.reduce(function(a,v){return a+v;},0)/s.length;});
+    var lbl2DName = tgt.length===1 ? tgt[0] : (tgt.length===eqs.length ? 'Todos' : tgt.length+' equip.');
     dc('cSC2');
-    CH['cSC2']=new Chart(document.getElementById('cSC2'),{type:'bar',data:{labels:lbl2,datasets:[{label:(tgt[0]||'')+' diario',data:daily2,backgroundColor:'#1A527655',borderWidth:0,order:2},{label:'Media 7d',data:ma72,type:'line',borderColor:'#B7770D',borderWidth:2,pointRadius:0,tension:.4,fill:false,order:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{font:{size:10}}}},scales:{x:{ticks:{autoSkip:true,maxTicksLimit:16,font:{size:9},maxRotation:45}},y:{title:{display:true,text:'toneladas',font:{size:10}}}}}});
+    CH['cSC2']=new Chart(document.getElementById('cSC2'),{type:'bar',data:{labels:lbl2,datasets:[{label:lbl2DName+' diario',data:daily2,backgroundColor:'#1A527655',borderWidth:0,order:2},{label:'Media 7d',data:ma72,type:'line',borderColor:'#B7770D',borderWidth:2,pointRadius:0,tension:.4,fill:false,order:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{font:{size:10}}}},scales:{x:{ticks:{autoSkip:true,maxTicksLimit:16,font:{size:9},maxRotation:45}},y:{title:{display:true,text:'toneladas',font:{size:10}}}}}});
   }
 }
 
@@ -942,19 +1131,28 @@ function renderCMP() {
   var mv={};
   obras.forEach(function(o){mv[o]=mVal(o);});
 
-  var vals=[], yLbl='';
-  if(cmpMetric==='prod'){vals=obras.map(function(o){return mv[o].prod;});yLbl='toneladas (t)';}
-  else if(cmpMetric==='hrs'){vals=obras.map(function(o){return mv[o].hrs;});yLbl='horas trabalhadas';}
-  else if(cmpMetric==='util'){vals=obras.map(function(o){return +mv[o].util.toFixed(1);});yLbl='% utilizacao';}
-  else if(cmpMetric==='pond_acum'){vals=obras.map(function(o){return mv[o].pond_acum;});yLbl='t/equipamento-dia acumulado';}
-  else{vals=obras.map(function(o){return mv[o].pond_dia;});yLbl='t/equipamento (ultimo dia)';}
+  function metricVal(o) {
+    if(cmpMetric==='prod') return mv[o].prod;
+    if(cmpMetric==='hrs') return mv[o].hrs;
+    if(cmpMetric==='util') return +mv[o].util.toFixed(1);
+    if(cmpMetric==='pond_acum') return mv[o].pond_acum;
+    return mv[o].pond_dia;
+  }
+  var yLbl = cmpMetric==='prod' ? 'toneladas (t)' :
+             cmpMetric==='hrs' ? 'horas trabalhadas' :
+             cmpMetric==='util' ? '% utilizacao' :
+             cmpMetric==='pond_acum' ? 't/equipamento-dia acumulado' : 't/equipamento (ultimo dia)';
+
+  // Ordena obras em ordem decrescente pela metrica atualmente selecionada
+  var obrasOrd = obras.slice().sort(function(a,b){ return metricVal(b)-metricVal(a); });
+  var vals = obrasOrd.map(function(o){ return metricVal(o); });
 
   dc('cCMP');
   CH['cCMP']=new Chart(document.getElementById('cCMP'),{
     type:'bar',
-    data:{labels:obras.map(function(o){return OS[o]||o;}),
+    data:{labels:obrasOrd.map(function(o){return OS[o]||o;}),
           datasets:[{label:yLbl,data:vals.map(function(v){return Math.round(v*10)/10;}),
-          backgroundColor:obras.map(function(o){return o===selObra?'#1A5276':'#1A527666';}),borderWidth:0}]},
+          backgroundColor:obrasOrd.map(function(o){return o===selObra?'#1A5276':'#1A527666';}),borderWidth:0}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{ticks:{font:{size:9},maxRotation:30}},y:{title:{display:true,text:yLbl,font:{size:10}}}}}
   });
