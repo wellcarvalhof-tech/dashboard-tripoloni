@@ -263,6 +263,11 @@ tr:hover td{background:#FAFBFC}
       <button onclick="setCMP('pond_acum',this)">t/Equip-Dia</button>
       <button onclick="setCMP('pond_dia',this)">t/Equip Ult.Dia</button>
     </div>
+    <div class="vsep"></div>
+    <div class="fchk-grp">
+      <label class="fchk"><input type="checkbox" id="fHrsCmp" onchange="fHrsCmp=this.checked;renderCMP()"> Excluir sem horas</label>
+      <label class="fchk"><input type="checkbox" id="fProdCmp" onchange="fProdCmp=this.checked;renderCMP()"> Excluir sem producao</label>
+    </div>
   </div>
   <div class="card" style="margin-bottom:12px">
     <div class="ct"><span class="dot" style="background:var(--blue)"></span>Comparativo de obras</div>
@@ -305,6 +310,7 @@ var CH = {};
 var fHrsObra=false, fProdObra=false; // Producao da Obra
 var fHrsEq=false,   fProdEq=false;   // Por Equipamento
 var fHrsSC=false,   fProdSC=false;   // Avanco Acumulado
+var fHrsCmp=false,  fProdCmp=false;  // Comparativo
 
 function fmt(n) {
   var v = Math.round(n||0);
@@ -532,22 +538,54 @@ document.addEventListener('click', function(e) {
 });
 
 
-// ── Filtro de equipamentos por periodo ───────────────────────────────────────
-// Dado uma lista de equipamentos, remove os que nao atendem aos criterios
-// de filtro no periodo de meses selecionado. Usa obra_eq_mensal como fonte.
-function filtrarEqs(eqList, obra, meses, fHrs, fProd) {
-  if(!fHrs && !fProd) return eqList;
-  return eqList.filter(function(es) {
-    var totalHrs = 0, totalProd = 0;
-    meses.forEach(function(m) {
-      var v = ((D.obra_eq_mensal[obra]||{})[es]||{})[String(m)]||{};
-      totalHrs  += v.hrs  || 0;
-      totalProd += v.prod || 0;
-    });
-    if(fHrs  && totalHrs  === 0) return false;
-    if(fProd && totalProd === 0) return false;
-    return true;
+// ── Filtro de dias zerados ────────────────────────────────────────────────────
+// Recebe um dayMap {data: {prod,hrs,oc,...}} e retorna uma copia sem os dias
+// onde hrs==0 (se fHrs) ou prod==0 (se fProd).
+function filtrarDias(dayMap, fHrs, fProd) {
+  if(!fHrs && !fProd) return dayMap;
+  var result = {};
+  Object.keys(dayMap).forEach(function(d) {
+    var r = dayMap[d];
+    if(fHrs  && (r.hrs  || 0) === 0) return;
+    if(fProd && (r.prod || 0) === 0) return;
+    result[d] = r;
   });
+  return result;
+}
+
+// ── Recalculo de ponderado com dias filtrados ─────────────────────────────────
+// Replica a logica do Python: prod_acum_per_eq_dia = prod_total / total_eq_dias
+// onde total_eq_dias = soma de equipamentos ativos (prod>0) por dia.
+// Usa daily_obra_eq filtrado como fonte, restrito aos meses de mCmp.
+function calcPonderado(obra, meses, fHrs, fProd) {
+  var eqDM = D.daily_obra_eq[obra] || {};
+  var eqs = D.obra_summary[obra] ? D.obra_summary[obra].equipamentos : [];
+  var prodTotal = 0;
+  var totalEqDias = 0;
+  // Itera por dia: conta quantos equipamentos ativos (prod>0) naquele dia
+  var diasSet = {};
+  eqs.forEach(function(es) {
+    var filtered = filtrarDias(eqDM[es] || {}, fHrs, fProd);
+    Object.entries(filtered).forEach(function(e) {
+      var d = e[0], v = e[1];
+      var mes = parseInt(d.split('-')[1]);
+      if(meses.indexOf(mes) === -1) return;
+      var p = v.prod || 0;
+      prodTotal += p;
+      if(p > 0) totalEqDias += 1; // 1 equipamento ativo nesse dia
+    });
+  });
+  var pond = D.obra_ponderado[obra] || {};
+  return {
+    prod_total: prodTotal,
+    total_eq_dias: totalEqDias,
+    prod_acum_per_eq_dia: totalEqDias > 0 ? Math.round(prodTotal / totalEqDias * 10) / 10 : 0,
+    // prod_last nao muda com filtro de dias historicos (e o ultimo dia real)
+    n_eq_last: pond.n_eq_last || 0,
+    prod_last_total: pond.prod_last_total || 0,
+    prod_last_per_eq: pond.prod_last_per_eq || 0,
+    last_date: pond.last_date || '',
+  };
 }
 
 function weekKey(d) {
@@ -1027,32 +1065,27 @@ function renderObra() {
   var allEqs = D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos : [];
   var pickedEqs = selEqObra.includes('ALL') ? allEqs : selEqObra.filter(function(x){ return allEqs.includes(x); });
   if(!pickedEqs.length) pickedEqs = allEqs;
-  // Aplica filtros de horas/producao zeradas sobre o periodo selecionado
-  pickedEqs = filtrarEqs(pickedEqs, selObra, mObra, fHrsObra, fProdObra);
-  if(!pickedEqs.length) pickedEqs = [];
 
-  // cO1/cO2: soma diaria dos equipamentos selecionados (ou da obra toda se "Todos")
-  var dm;
-  if(selEqObra.includes('ALL')) {
-    dm = D.daily_obra[selObra] || {};
-  } else {
-    dm = {};
-    pickedEqs.forEach(function(es) {
-      Object.entries((D.daily_obra_eq[selObra]||{})[es]||{}).forEach(function(e) {
-        if(!dm[e[0]]) dm[e[0]] = {prod:0,hrs:0,oc:0};
-        dm[e[0]].prod += e[1].prod||0;
-        dm[e[0]].hrs  += e[1].hrs||0;
-        dm[e[0]].oc   += e[1].oc||0;
-      });
+  // cO1/cO2: soma diaria dos equipamentos selecionados, com dias zerados excluidos
+  var dm = {};
+  pickedEqs.forEach(function(es) {
+    var esDays = filtrarDias((D.daily_obra_eq[selObra]||{})[es]||{}, fHrsObra, fProdObra);
+    Object.entries(esDays).forEach(function(e) {
+      if(!dm[e[0]]) dm[e[0]] = {prod:0,hrs:0,oc:0};
+      dm[e[0]].prod += e[1].prod||0;
+      dm[e[0]].hrs  += e[1].hrs||0;
+      dm[e[0]].oc   += e[1].oc||0;
     });
-  }
+  });
   var ag = agg(dm,mObra,vObra);
   mkBar('cO1',ag.labels,ag.prod,'#1A527699','toneladas (t)');
   mkStackBarPct('cO2',ag.labels,ag.hrs,ag.oc,'Trabalhadas (%)','Ociosas (%)');
-  // Producao por equipamento, na mesma escala de tempo (vObra) selecionada,
-  // restrita aos equipamentos escolhidos no checkbox
-  var dailyByEq = D.daily_obra_eq[selObra] || {};
-  var aggE = aggMultiEq(dailyByEq, pickedEqs, mObra, vObra);
+  // cO3: producao por equipamento com dias zerados excluidos por equipamento
+  var dailyByEqFiltered = {};
+  pickedEqs.forEach(function(es) {
+    dailyByEqFiltered[es] = filtrarDias((D.daily_obra_eq[selObra]||{})[es]||{}, fHrsObra, fProdObra);
+  });
+  var aggE = aggMultiEq(dailyByEqFiltered, pickedEqs, mObra, vObra);
   dc('cO3');
   CH['cO3'] = new Chart(document.getElementById('cO3'),{
     type:'line',
@@ -1069,12 +1102,15 @@ function renderObra() {
 function renderEq() {
   var eqList = selEqDet.length ? selEqDet : (D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos.slice(0,1) : []);
   if(!eqList.length) return;
-  // Aplica filtros de horas/producao zeradas sobre o periodo selecionado
-  eqList = filtrarEqs(eqList, selObra, mEq, fHrsEq, fProdEq);
+  // Aplica filtro de dias zerados por equipamento
+  var dailyByEqFiltered = {};
+  var dailyRaw = D.daily_obra_eq[selObra] || {};
+  eqList.forEach(function(es) {
+    dailyByEqFiltered[es] = filtrarDias(dailyRaw[es]||{}, fHrsEq, fProdEq);
+  });
 
-  // cE1: producao, uma linha por equipamento selecionado
-  var dailyByEq = D.daily_obra_eq[selObra] || {};
-  var aggE = aggMultiEq(dailyByEq, eqList, mEq, vEq);
+  // cE1: producao, uma linha por equipamento selecionado (com dias filtrados)
+  var aggE = aggMultiEq(dailyByEqFiltered, eqList, mEq, vEq);
   dc('cE1');
   CH['cE1'] = new Chart(document.getElementById('cE1'),{
     type:'line',
@@ -1086,10 +1122,10 @@ function renderEq() {
       scales:{x:{ticks:{autoSkip:true,maxTicksLimit:18,font:{size:9},maxRotation:45}},y:{title:{display:true,text:'toneladas',font:{size:10}}}}}
   });
 
-  // cE2 e tabela mensal: soma agregada dos equipamentos selecionados
+  // cE2: soma diaria agregada com dias filtrados
   var dm = {};
   eqList.forEach(function(es) {
-    Object.entries(dailyByEq[es]||{}).forEach(function(e) {
+    Object.entries(dailyByEqFiltered[es]).forEach(function(e) {
       if(!dm[e[0]]) dm[e[0]] = {prod:0,hrs:0,oc:0};
       dm[e[0]].prod += e[1].prod||0;
       dm[e[0]].hrs  += e[1].hrs||0;
@@ -1099,13 +1135,20 @@ function renderEq() {
   var ag = agg(dm,mEq,vEq);
   mkStackBarPct('cE2',ag.labels,ag.hrs,ag.oc,'Trabalhadas (%)','Ociosas (%)');
 
+  // Tabela mensal: recalculada a partir dos dados diarios filtrados
+  var byMonth = {};
+  eqList.forEach(function(es) {
+    Object.entries(dailyByEqFiltered[es]).forEach(function(e) {
+      var mes = parseInt(e[0].split('-')[1]);
+      if(!byMonth[mes]) byMonth[mes] = {prod:0,hrs:0,oc:0};
+      byMonth[mes].prod += e[1].prod||0;
+      byMonth[mes].hrs  += e[1].hrs||0;
+      byMonth[mes].oc   += e[1].oc||0;
+    });
+  });
   var rows='', tp=0, thr=0, to=0;
   mEq.forEach(function(m) {
-    var d = {prod:0,hrs:0,oc:0};
-    eqList.forEach(function(es) {
-      var v = ((D.obra_eq_mensal[selObra]||{})[es]||{})[m]||{};
-      d.prod += v.prod||0; d.hrs += v.hrs||0; d.oc += v.oc||0;
-    });
+    var d = byMonth[m] || {prod:0,hrs:0,oc:0};
     var u=(d.hrs||0)/((d.hrs||0)+(d.oc||0))*100||0;
     tp+=d.prod||0; thr+=d.hrs||0; to+=d.oc||0;
     rows += '<tr><td>'+ML[m]+'/2026</td><td class="r" style="font-weight:600">'+(d.prod?fmt(d.prod):'--')+'</td><td class="r">'+(d.hrs?fmtH(d.hrs)+' h':'--')+'</td><td class="r">'+(d.oc?fmtH(d.oc)+' h':'--')+'</td><td><span class="badge '+bc(u)+'">'+(d.prod||d.hrs?u.toFixed(1)+'%':'--')+'</span></td></tr>';
@@ -1145,21 +1188,21 @@ function renderSC() {
     var eqs = D.obra_summary[selObra] ? D.obra_summary[selObra].equipamentos : [];
     var tgt = selEqSC.includes('ALL') ? eqs : selEqSC.filter(function(x){ return eqs.includes(x); });
     if(!tgt.length) tgt = eqs;
-    // Aplica filtros de horas/producao zeradas (usando todos os meses como periodo
-    // pois a aba Avanco Acumulado nao tem seletor de pills por mes)
-    tgt = filtrarEqs(tgt, selObra, MESES, fHrsSC, fProdSC);
-    if(!tgt.length) tgt = [];
+    // Aplica filtro de dias zerados por equipamento
     var eqDM = D.daily_obra_eq[selObra]||{};
+    var eqDMFiltered = {};
+    tgt.forEach(function(es){ eqDMFiltered[es] = filtrarDias(eqDM[es]||{}, fHrsSC, fProdSC); });
+    // Datas unicas da uniao dos equipamentos filtrados
     var allDates = [];
-    Object.values(eqDM).forEach(function(m){Object.keys(m).forEach(function(d){if(!allDates.includes(d))allDates.push(d);});});
+    Object.values(eqDMFiltered).forEach(function(m){Object.keys(m).forEach(function(d){if(!allDates.includes(d))allDates.push(d);});});
     allDates.sort();
     var lbl2=allDates.map(function(d){return d.slice(5).split('-').reverse().join('/');});
-    var ds=tgt.map(function(es,i){var acc2=0;var em=eqDM[es]||{};return{label:es,data:allDates.map(function(d){acc2+=em[d]?em[d].prod||0:0;return acc2;}),borderColor:COLS[i%COLS.length],borderWidth:2,pointRadius:0,tension:.4,fill:false};});
+    var ds=tgt.map(function(es,i){var acc2=0;var em=eqDMFiltered[es]||{};return{label:es,data:allDates.map(function(d){acc2+=em[d]?em[d].prod||0:0;return acc2;}),borderColor:COLS[i%COLS.length],borderWidth:2,pointRadius:0,tension:.4,fill:false};});
     dc('cSC1');
     CH['cSC1']=new Chart(document.getElementById('cSC1'),{type:'line',data:{labels:lbl2,datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'right',labels:{font:{size:9},boxWidth:10}}},scales:{x:{ticks:{autoSkip:true,maxTicksLimit:16,font:{size:9},maxRotation:45}},y:{title:{display:true,text:'toneladas acumuladas',font:{size:10}}}}}});
-    // cSC2: soma diaria dos equipamentos selecionados (ou 1 se so um escolhido)
+    // cSC2: soma diaria filtrada
     var daily2=allDates.map(function(d){
-      var s=0; tgt.forEach(function(es){var em=eqDM[es]||{}; s+=em[d]?em[d].prod||0:0;}); return s;
+      var s=0; tgt.forEach(function(es){var em=eqDMFiltered[es]||{}; s+=em[d]?em[d].prod||0:0;}); return s;
     });
     var ma72=daily2.map(function(_,i){var s=daily2.slice(Math.max(0,i-6),i+1);return s.reduce(function(a,v){return a+v;},0)/s.length;});
     var lbl2DName = tgt.length===1 ? tgt[0] : (tgt.length===eqs.length ? 'Todos' : tgt.length+' equip.');
@@ -1172,10 +1215,28 @@ function renderSC() {
 function renderCMP() {
   var obras = D.obras;
   function mVal(o) {
+    // Recalcula todos os valores a partir dos dados diarios filtrados
+    var dm = filtrarDias(D.daily_obra[o]||{}, fHrsCmp, fProdCmp);
     var prod=0,hrs=0,oc=0;
-    mCmp.forEach(function(m){var d=(D.obra_mensal[o]||{})[m]||{};prod+=d.prod||0;hrs+=d.hrs||0;oc+=d.oc||0;});
-    var p=D.obra_ponderado[o];
-    return {prod:prod,hrs:hrs,oc:oc,util:hrs/(hrs+oc)*100||0,pond_acum:p?p.prod_acum_per_eq_dia:0,pond_dia:p?p.prod_last_per_eq:0};
+    mCmp.forEach(function(m){
+      Object.entries(dm).forEach(function(e){
+        if(parseInt(e[0].split('-')[1])===m){
+          prod+=e[1].prod||0; hrs+=e[1].hrs||0; oc+=e[1].oc||0;
+        }
+      });
+    });
+    // Recalcula ponderado (prod/eq-dia) com filtro aplicado por equipamento
+    var p = (fHrsCmp || fProdCmp)
+      ? calcPonderado(o, mCmp, fHrsCmp, fProdCmp)
+      : (D.obra_ponderado[o] || {});
+    return {
+      prod: prod,
+      hrs: hrs,
+      oc: oc,
+      util: hrs/(hrs+oc)*100||0,
+      pond_acum: p.prod_acum_per_eq_dia || 0,
+      pond_dia: p.prod_last_per_eq || 0,
+    };
   }
   var mv={};
   obras.forEach(function(o){mv[o]=mVal(o);});
@@ -1197,46 +1258,67 @@ function renderCMP() {
   var vals = obrasOrd.map(function(o){ return metricVal(o); });
 
   dc('cCMP');
+  var nEqs = obrasOrd.map(function(o){ return (D.obra_summary[o]||{}).num_equipamentos||0; });
   CH['cCMP']=new Chart(document.getElementById('cCMP'),{
     type:'bar',
     data:{labels:obrasOrd.map(function(o){return OS[o]||o;}),
-          datasets:[{label:yLbl,data:vals.map(function(v){return Math.round(v*10)/10;}),
-          backgroundColor:obrasOrd.map(function(o){return o===selObra?'#1A5276':'#1A527666';}),borderWidth:0}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{ticks:{font:{size:9},maxRotation:30}},y:{title:{display:true,text:yLbl,font:{size:10}}}}}
+          datasets:[
+            {label:yLbl,data:vals.map(function(v){return Math.round(v*10)/10;}),
+             backgroundColor:obrasOrd.map(function(o){return o===selObra?'#1A5276':'#1A527666';}),
+             borderWidth:0,yAxisID:'y',order:2},
+            {label:'Maquinas',type:'line',data:nEqs,
+             borderColor:'#E67E22',backgroundColor:'#E67E2200',
+             borderWidth:2,pointRadius:5,pointBackgroundColor:'#E67E22',
+             tension:0,yAxisID:'y2',order:1}
+          ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'top',labels:{font:{size:10},boxWidth:12}}},
+      scales:{
+        x:{ticks:{font:{size:9},maxRotation:30}},
+        y:{title:{display:true,text:yLbl,font:{size:10}}},
+        y2:{position:'right',title:{display:true,text:'Maquinas',font:{size:10}},
+            grid:{drawOnChartArea:false},
+            ticks:{font:{size:9},stepSize:1,precision:0}}
+      }}
+  });
+
+  // Ponderado por obra -- recalculado com filtro se necessario
+  var pvMap = {};
+  obras.forEach(function(o) {
+    pvMap[o] = (fHrsCmp || fProdCmp)
+      ? calcPonderado(o, mCmp, fHrsCmp, fProdCmp)
+      : (D.obra_ponderado[o] || {});
   });
 
   // Ponderado cards -- pre-compute rank to avoid IIFE in template
   var sortedPond = obras.slice().sort(function(a,b){
-    var pa=D.obra_ponderado[a]||{}, pb=D.obra_ponderado[b]||{};
-    return (pb.prod_acum_per_eq_dia||0)-(pa.prod_acum_per_eq_dia||0);
+    return (pvMap[b].prod_acum_per_eq_dia||0)-(pvMap[a].prod_acum_per_eq_dia||0);
   });
   var topAcum = sortedPond[0];
   var topDia = obras.slice().sort(function(a,b){
-    var pa=D.obra_ponderado[a]||{}, pb=D.obra_ponderado[b]||{};
-    return (pb.prod_last_per_eq||0)-(pa.prod_last_per_eq||0);
+    return (pvMap[b].prod_last_per_eq||0)-(pvMap[a].prod_last_per_eq||0);
   })[0];
 
   // For ALL mode: build aggregate ponderado values
   var isAll = selObra === 'ALL';
   var curP;
   if(isAll) {
-    var totED  = obras.reduce(function(a,o){return a+((D.obra_ponderado[o]||{}).total_eq_dias||0);},0);
-    var totPAc = obras.reduce(function(a,o){return a+((D.obra_ponderado[o]||{}).prod_total||0);},0);
-    var totLPr = obras.reduce(function(a,o){return a+((D.obra_ponderado[o]||{}).prod_last_total||0);},0);
-    var totLEq = obras.reduce(function(a,o){return a+((D.obra_ponderado[o]||{}).n_eq_last||0);},0);
-    var maxDt  = obras.reduce(function(best,o){var d=(D.obra_ponderado[o]||{}).last_date||'';return d>best?d:best;},'');
+    var totED  = obras.reduce(function(a,o){return a+(pvMap[o].total_eq_dias||0);},0);
+    var totPAc = obras.reduce(function(a,o){return a+(pvMap[o].prod_total||mv[o].prod||0);},0);
+    var totLPr = obras.reduce(function(a,o){return a+(pvMap[o].prod_last_total||0);},0);
+    var totLEq = obras.reduce(function(a,o){return a+(pvMap[o].n_eq_last||0);},0);
+    var maxDt  = obras.reduce(function(best,o){var d=pvMap[o].last_date||'';return d>best?d:best;},'');
     curP = {
       prod_acum_per_eq_dia: totED>0 ? totPAc/totED : 0,
       total_eq_dias: totED,
-      dias_apont: obras.reduce(function(a,o){return a+((D.obra_ponderado[o]||{}).dias_apont||0);},0),
+      dias_apont: obras.reduce(function(a,o){return a+((pvMap[o]||{}).dias_apont||(D.obra_ponderado[o]||{}).dias_apont||0);},0),
       prod_last_per_eq: totLEq>0 ? totLPr/totLEq : 0,
       n_eq_last: totLEq,
       prod_last_total: totLPr,
       last_date: maxDt
     };
   } else {
-    curP = D.obra_ponderado[selObra] || {};
+    curP = pvMap[selObra] || {};
   }
 
   var rankPos = isAll ? '--' : (sortedPond.indexOf(selObra)+1)+'° de '+obras.length;
@@ -1247,13 +1329,13 @@ function renderCMP() {
   pcHtml += '<div class="pc-title">t / Equip-Dia &mdash; Acumulado</div>';
   pcHtml += '<div class="pc-val">'+fmt(curP.prod_acum_per_eq_dia)+'</div>';
   pcHtml += '<div class="pc-sub">'+(curP.total_eq_dias||0)+' equip-dias &middot; '+(curP.dias_apont||0)+' dias de apontamento</div>';
-  pcHtml += '<div class="pc-sub" style="margin-top:4px">Melhor frota: <strong>'+(OS[topAcum]||topAcum)+'</strong> ('+fmt((D.obra_ponderado[topAcum]||{}).prod_acum_per_eq_dia)+' t/eq-dia)</div>';
+  pcHtml += '<div class="pc-sub" style="margin-top:4px">Melhor frota: <strong>'+(OS[topAcum]||topAcum)+'</strong> ('+fmt((pvMap[topAcum]||{}).prod_acum_per_eq_dia)+' t/eq-dia)</div>';
   pcHtml += '</div>';
   pcHtml += '<div class="pond-card'+(topDia===selObra&&!isAll?' top':'')+'">';
   pcHtml += '<div class="pc-title">t / Equip &mdash; Ultimo dia ('+lastFmt+')</div>';
   pcHtml += '<div class="pc-val">'+fmt(curP.prod_last_per_eq)+'</div>';
   pcHtml += '<div class="pc-sub">'+(curP.n_eq_last||0)+' equip. ativos &middot; '+fmt(curP.prod_last_total)+' t total</div>';
-  pcHtml += '<div class="pc-sub" style="margin-top:4px">Melhor frota: <strong>'+(OS[topDia]||topDia)+'</strong> ('+fmt((D.obra_ponderado[topDia]||{}).prod_last_per_eq)+' t/eq)</div>';
+  pcHtml += '<div class="pc-sub" style="margin-top:4px">Melhor frota: <strong>'+(OS[topDia]||topDia)+'</strong> ('+fmt((pvMap[topDia]||{}).prod_last_per_eq)+' t/eq)</div>';
   pcHtml += '</div>';
   pcHtml += '<div class="pond-card">';
   pcHtml += '<div class="pc-title">Ranking ponderado (acumulado)</div>';
@@ -1263,15 +1345,15 @@ function renderCMP() {
   document.getElementById('pond-cards').innerHTML = pcHtml;
 
   // Ponderado table
-  var maxED = Math.max.apply(null, obras.map(function(o){return (D.obra_ponderado[o]||{}).prod_acum_per_eq_dia||0;}).concat([1]));
+  var maxED = Math.max.apply(null, obras.map(function(o){return (pvMap[o]||{}).prod_acum_per_eq_dia||0;}).concat([1]));
   var thPond = hd(th('#')+th('Obra')+th('Prod. Acumulada (t)','r')+th('Equip-Dias','r')+th('Dias Apont.','r')+th('t/Equip-Dia','r')+th('Equip. Ativo (ult.)','r')+th('t/Equip (ult. dia)','r')+th('Eficiencia'));
   var rowsPond = '';
   sortedPond.forEach(function(o,i) {
-    var p=D.obra_ponderado[o]||{};
+    var p=pvMap[o]||{}; var pOrig=D.obra_ponderado[o]||{};
     var bar=Math.round((p.prod_acum_per_eq_dia||0)/maxED*100);
     var hi=o===selObra?' style="background:#F0F7FF;font-weight:600"':'';
     var badge=o===selObra?' <span class="badge b-blue">sel</span>':'';
-    rowsPond += '<tr'+hi+'><td style="color:var(--muted);font-size:10px">'+(i+1)+'</td><td>'+(OS[o]||o)+badge+'</td><td class="r">'+fmt(p.prod_total)+'</td><td class="r">'+(p.total_eq_dias||0)+'</td><td class="r">'+(p.dias_apont||0)+'</td><td class="r" style="font-weight:700;color:var(--blue)">'+fmt(p.prod_acum_per_eq_dia)+'</td><td class="r">'+(p.n_eq_last||0)+'</td><td class="r">'+fmt(p.prod_last_per_eq)+'</td><td><div class="brow"><div class="bg"><div class="bf" style="width:'+bar+'%;background:var(--teal)"></div></div><span style="font-size:9px;color:var(--muted)">'+bar+'%</span></div></td></tr>';
+    rowsPond += '<tr'+hi+'><td style="color:var(--muted);font-size:10px">'+(i+1)+'</td><td>'+(OS[o]||o)+badge+'</td><td class="r">'+fmt(mv[o].prod)+'</td><td class="r">'+(p.total_eq_dias||0)+'</td><td class="r">'+(pOrig.dias_apont||0)+'</td><td class="r" style="font-weight:700;color:var(--blue)">'+fmt(p.prod_acum_per_eq_dia)+'</td><td class="r">'+(p.n_eq_last||0)+'</td><td class="r">'+fmt(p.prod_last_per_eq)+'</td><td><div class="brow"><div class="bg"><div class="bf" style="width:'+bar+'%;background:var(--teal)"></div></div><span style="font-size:9px;color:var(--muted)">'+bar+'%</span></div></td></tr>';
   });
   document.getElementById('tbl-pond').innerHTML = thPond+rowsPond+'</tbody>';
 
@@ -1280,7 +1362,7 @@ function renderCMP() {
   var thCmp = hd(th('#')+th('Obra')+th('Producao (t)','r')+th('Horas Trab.','r')+th('Horas Ociosas','r')+th('Utilizacao')+th('Equip.','r')+th('t/Eq-Dia','r'));
   var rowsCmp = '';
   sortedFull.forEach(function(o,i) {
-    var v=mv[o]; var p=D.obra_ponderado[o]||{};
+    var v=mv[o]; var p=pvMap[o]||{};
     var hi=o===selObra?' style="background:#F0F7FF;font-weight:600"':'';
     rowsCmp += '<tr'+hi+'><td style="color:var(--muted);font-size:10px">'+(i+1)+'</td><td>'+(OS[o]||o)+'</td><td class="r">'+fmt(v.prod)+'</td><td class="r">'+fmtH(v.hrs)+' h</td><td class="r">'+fmtH(v.oc)+' h</td><td><span class="badge '+bc(v.util)+'">'+v.util.toFixed(1)+'%</span></td><td class="r">'+D.obra_summary[o].num_equipamentos+'</td><td class="r" style="font-weight:600;color:var(--blue)">'+fmt(p?p.prod_acum_per_eq_dia:0)+'</td></tr>';
   });
