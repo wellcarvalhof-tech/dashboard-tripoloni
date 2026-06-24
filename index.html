@@ -1006,11 +1006,14 @@ function renderLastDay() {
     var hrs_total = (d.hrs||0)+(d.oc||0);
     var mc = calcMetaEq(es, d.prod||0, d.hrs||0, hrs_total);
     if(mc.meta !== null){ totMeta += mc.meta; metaValida = true; }
+    var alertaHrsLD = ((d.prod||0) > 0 && (d.hrs||0) === 0)
+      ? '<i class="alert-icon" data-tip="Producao registrada sem horas — verificar apontamento">&#9888;</i>'
+      : '';
     rows1 += '<tr>';
     rows1 += '<td><span class="es-tag">'+es+'</span></td>';
     rows1 += '<td class="r" style="font-size:11px;color:var(--muted)">'+mc.modelo+'</td>';
     rows1 += '<td class="r" style="font-weight:600">'+fmt(d.prod)+'</td>';
-    rows1 += '<td class="r">'+fmtH(d.hrs)+' h</td>';
+    rows1 += '<td class="r">'+fmtH(d.hrs)+' h'+alertaHrsLD+'</td>';
     rows1 += '<td class="r">'+fmtH(d.oc)+' h</td>';
     rows1 += '<td class="r">'+fmtH(d.motor)+' h</td>';
     rows1 += '<td class="r">'+(d.dist?fmtH(d.dist)+' km':'--')+'</td>';
@@ -1130,15 +1133,21 @@ function renderAccumTable() {
   var totP=0,totH=0,totO=0,totMeta=0,totMetaValida=false;
   allEqs.forEach(function(es) {
     var days = eqMap[es] || {};
-    var p=0,hrs=0,oc=0,dias=0;
+    var p=0,hrs=0,oc=0,dias=0,diasSemHoras=0;
     Object.keys(days).forEach(function(d) {
       if(!inRange(d)) return;
-      if(fHrsLD  && (days[d].hrs  || 0) === 0) return;
-      if(fProdLD && (days[d].prod || 0) === 0) return;
-      p   += days[d].prod||0;
-      hrs += days[d].hrs||0;
-      oc  += days[d].oc||0;
-      if(days[d].prod > 0) dias++;
+      var dProd = days[d].prod||0;
+      var dHrs  = days[d].hrs||0;
+      var dOc   = days[d].oc||0;
+      // Flag "excluir sem horas": descarta dias com hrs==0 E prod==0
+      // Dias com prod>0 mas hrs==0 sao mantidos mas sinalizados
+      if(fHrsLD && dHrs === 0 && dProd === 0) return;
+      if(fProdLD && dProd === 0) return;
+      p   += dProd;
+      hrs += dHrs;
+      oc  += dOc;
+      if(dProd > 0) dias++;
+      if(dProd > 0 && dHrs === 0) diasSemHoras++;
     });
     if(p===0 && hrs===0 && oc===0) return; // exclui so se nao tem nenhum dado
     var hrs_total = hrs + oc;
@@ -1148,12 +1157,15 @@ function renderAccumTable() {
     var ph    = phBase > 0 ? p/phBase : 0;
     var media = dias > 0 ? Math.round(p/dias) : 0;
     var phColor = mc.ating!==null ? (mc.ating>=100?'var(--teal)':'#E67E22') : 'var(--teal)';
+    var alertaHrs = diasSemHoras > 0
+      ? '<i class="alert-icon" data-tip="'+diasSemHoras+' dia(s) com producao mas sem horas registradas — verificar apontamento">&#9888;</i>'
+      : '';
     totP+=p; totH+=hrs; totO+=oc;
     h += '<tr>';
     h += '<td><span class="es-tag">'+es+'</span></td>';
     h += '<td class="r" style="font-size:11px;color:var(--muted)">'+mc.modelo+'</td>';
     h += '<td class="r" style="font-weight:600">'+fmt(p)+'</td>';
-    h += '<td class="r">'+fmtH(hrs)+' h</td>';
+    h += '<td class="r">'+fmtH(hrs)+' h'+alertaHrs+'</td>';
     h += '<td class="r">'+fmtH(oc)+' h</td>';
     h += '<td class="r">'+dias+'</td>';
     h += '<td class="r">'+fmt(media)+'</td>';
@@ -1651,10 +1663,13 @@ function buildEqTableHTML(rows, dateLabel) {
     if(mc.meta!==null){totMeta+=mc.meta;metaValida=true;}
     var u=(r.hrs||0)/((r.hrs||0)+(r.oc||0))*100||0;
     var phColor=mc.ating!==null?(mc.ating>=100?'var(--teal)':'#E67E22'):'var(--teal)';
+    var alertaHrsBuild = (r.prod>0 && r.hrs===0)
+      ? '<i class="alert-icon" data-tip="Producao registrada sem horas — verificar apontamento">&#9888;</i>'
+      : '';
     h+='<tr><td><span class="es-tag">'+r.es+'</span></td>';
     h+='<td class="r" style="font-size:11px;color:var(--muted)">'+mc.modelo+'</td>';
     h+='<td class="r" style="font-weight:600">'+fmt(r.prod)+'</td>';
-    h+='<td class="r">'+fmtH(r.hrs)+' h</td><td class="r">'+fmtH(r.oc)+' h</td>';
+    h+='<td class="r">'+fmtH(r.hrs)+' h'+alertaHrsBuild+'</td><td class="r">'+fmtH(r.oc)+' h</td>';
     h+='<td class="r" style="color:var(--muted)">'+(mc.meta!==null?fmt(mc.meta):'--')+'</td>';
     h+='<td class="r" style="font-weight:600;color:'+phColor+'">'+(mc.prodH!==null?mc.prodH.toFixed(1):'--')+alertaApontamento(mc.ating)+'</td>';
     h+='<td><span class="badge '+bc(u)+'">'+u.toFixed(1)+'%</span></td></tr>';
@@ -1668,7 +1683,7 @@ function getEqRowsForDate(obra, targetDate) {
   var rows = [];
   Object.keys(eqMap).sort().forEach(function(es) {
     var d = (eqMap[es]||{})[targetDate];
-    if(d && (d.prod>0||d.hrs>0)) rows.push({es:es,prod:d.prod||0,hrs:d.hrs||0,oc:d.oc||0});
+    if(d && (d.prod>0||d.hrs>0||d.oc>0)) rows.push({es:es,prod:d.prod||0,hrs:d.hrs||0,oc:d.oc||0});
   });
   return rows;
 }
