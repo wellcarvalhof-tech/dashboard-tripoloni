@@ -1140,7 +1140,7 @@ function renderAccumTable() {
       oc  += days[d].oc||0;
       if(days[d].prod > 0) dias++;
     });
-    if(p===0 && hrs===0) return;
+    if(p===0 && hrs===0 && oc===0) return; // exclui so se nao tem nenhum dado
     var hrs_total = hrs + oc;
     var mc = calcMetaEq(es, p, hrs, hrs_total);
     if(mc.meta !== null){ totMeta += mc.meta; totMetaValida = true; }
