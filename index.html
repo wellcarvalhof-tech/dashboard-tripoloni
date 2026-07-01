@@ -493,36 +493,77 @@ function updateTabLabel() {
 }
 
 function updateKPIs() {
+  // Usa mObra como referencia de meses (aba Producao da Obra)
+  // Filtra daily_obra pelos meses selecionados para calcular KPIs dinamicos
+  var meses = mObra; // array de meses ativos ex: [1,2,3]
+
+  function calcObra(obra) {
+    var daily = D.daily_obra[obra] || {};
+    var prod=0, hrs=0, oc=0;
+    Object.keys(daily).forEach(function(d) {
+      var mes = parseInt(d.split('-')[1]);
+      if(meses.indexOf(mes) === -1) return;
+      prod += daily[d].prod || 0;
+      hrs  += daily[d].hrs  || 0;
+      oc   += daily[d].oc   || 0;
+    });
+    // t/equip-dia: replica logica Python
+    var eqMap = D.daily_obra_eq[obra] || {};
+    var eqDiaMap = {};
+    Object.keys(eqMap).forEach(function(es) {
+      Object.keys(eqMap[es]).forEach(function(d) {
+        var mes = parseInt(d.split('-')[1]);
+        if(meses.indexOf(mes) === -1) return;
+        var p = (eqMap[es][d].prod || 0);
+        if(p > 0) { if(!eqDiaMap[d]) eqDiaMap[d]={}; eqDiaMap[d][es]=1; }
+      });
+    });
+    var eqDias = Object.keys(eqDiaMap).reduce(function(a,d){return a+Object.keys(eqDiaMap[d]).length;},0);
+    var tED = eqDias>0 ? Math.round(prod/eqDias*10)/10 : 0;
+    return {prod:prod, hrs:hrs, oc:oc, tED:tED, eqDias:eqDias};
+  }
+
   var kpiHtml = '';
   if(selObra === 'ALL') {
-    var totProd = D.obras.reduce(function(a,o){return a+(D.obra_summary[o].prod_total||0);},0);
-    var totHrs  = D.obras.reduce(function(a,o){return a+(D.obra_summary[o].hrs_total||0);},0);
-    var totOc   = D.obras.reduce(function(a,o){return a+(D.obra_summary[o].oc_total||0);},0);
-    var totEq   = D.obras.reduce(function(a,o){return a+(D.obra_summary[o].num_equipamentos||0);},0);
+    var totProd=0, totHrs=0, totOc=0, totEqDias=0;
+    D.obras.forEach(function(o) {
+      var c=calcObra(o); totProd+=c.prod; totHrs+=c.hrs; totOc+=c.oc; totEqDias+=c.eqDias;
+    });
     var u = totHrs/(totHrs+totOc)*100||0;
-    // Best obra by t/eq-dia
-    var bestObra = D.obras.slice().sort(function(a,b){return (D.obra_ponderado[b].prod_acum_per_eq_dia||0)-(D.obra_ponderado[a].prod_acum_per_eq_dia||0);})[0];
-    // Total eq-dias
-    var totEqDias = D.obras.reduce(function(a,o){return a+(D.obra_ponderado[o].total_eq_dias||0);},0);
-    var totPondAcum = totEqDias>0 ? totProd/totEqDias : 0;
-    kpiHtml += '<div class="kpi"><div class="kl">Producao total frota</div><div class="kv">'+fmtM(totProd)+' t</div><div class="ks">Todas as obras &middot; Jan-Jun 2026</div></div>';
+    var tED = totEqDias>0 ? Math.round(totProd/totEqDias*10)/10 : 0;
+    var totEq = D.obras.reduce(function(a,o){return a+(D.obra_summary[o].num_equipamentos||0);},0);
+    var bestObra = D.obras.slice().sort(function(a,b){
+      return calcObra(b).tED - calcObra(a).tED;
+    })[0];
+    var mLabel = meses.map(function(m){return ML[m];}).join('-');
+    kpiHtml += '<div class="kpi"><div class="kl">Producao total frota</div><div class="kv">'+fmtM(totProd)+' t</div><div class="ks">Todas as obras &middot; '+mLabel+' 2026</div></div>';
     kpiHtml += '<div class="kpi"><div class="kl">Obras ativas</div><div class="kv">'+D.obras.length+'</div><div class="ks">'+totEq+' equipamentos totais</div></div>';
     kpiHtml += '<div class="kpi"><div class="kl">Horas trabalhadas</div><div class="kv">'+fmtM(totHrs)+' h</div><div class="ks">Utilizacao media '+u.toFixed(1)+'%</div></div>';
-    kpiHtml += '<div class="kpi"><div class="kl">t/Equip-Dia frota</div><div class="kv">'+fmt(totPondAcum)+'</div><div class="ks">Ponderado &middot; '+totEqDias+' equip-dias</div></div>';
-    kpiHtml += '<div class="kpi"><div class="kl">Obra mais eficiente</div><div class="kv" style="font-size:13px;padding-top:3px">'+(OS[bestObra]||bestObra)+'</div><div class="ks">'+fmt(D.obra_ponderado[bestObra].prod_acum_per_eq_dia)+' t/equip-dia</div></div>';
+    kpiHtml += '<div class="kpi"><div class="kl">t/Equip-Dia frota</div><div class="kv">'+fmt(tED)+'</div><div class="ks">Ponderado &middot; '+mLabel+' 2026</div></div>';
+    kpiHtml += '<div class="kpi"><div class="kl">Obra mais eficiente</div><div class="kv" style="font-size:13px;padding-top:3px">'+(OS[bestObra]||bestObra)+'</div><div class="ks">'+fmt(calcObra(bestObra).tED)+' t/equip-dia</div></div>';
   } else {
-    var s = D.obra_summary[selObra];
-    var p = D.obra_ponderado[selObra];
-    var u2 = s.hrs_total/(s.hrs_total+s.oc_total)*100||0;
-    var acc = D.accum_data[selObra] || {};
-    var accEntries = Object.entries(acc).sort(function(a,b){return b[1].prod-a[1].prod;});
-    var top = accEntries[0];
+    var c = calcObra(selObra);
+    var u2 = c.hrs/(c.hrs+c.oc)*100||0;
+    var p = D.obra_ponderado[selObra] || {};
+    var s = D.obra_summary[selObra] || {};
+    // Top equipamento no período filtrado
+    var eqMap2 = D.daily_obra_eq[selObra] || {};
+    var eqProd2 = {};
+    Object.keys(eqMap2).forEach(function(es) {
+      Object.keys(eqMap2[es]).forEach(function(d) {
+        var mes = parseInt(d.split('-')[1]);
+        if(meses.indexOf(mes) === -1) return;
+        eqProd2[es] = (eqProd2[es]||0) + (eqMap2[es][d].prod||0);
+      });
+    });
+    var topEs = Object.keys(eqProd2).sort(function(a,b){return eqProd2[b]-eqProd2[a];})[0];
     var lastFmt = (p.last_date||'').split('-').reverse().join('/');
-    kpiHtml += '<div class="kpi"><div class="kl">Producao acumulada</div><div class="kv">'+fmtM(s.prod_total)+' t</div><div class="ks">Jan-Jun 2026</div></div>';
+    var mLabel2 = meses.map(function(m){return ML[m];}).join('-');
+    kpiHtml += '<div class="kpi"><div class="kl">Producao acumulada</div><div class="kv">'+fmtM(c.prod)+' t</div><div class="ks">'+mLabel2+' 2026</div></div>';
     kpiHtml += '<div class="kpi"><div class="kl">Ultimo registro</div><div class="kv" style="font-size:14px;padding-top:2px">'+lastFmt+'</div><div class="ks">'+fmt(p.prod_last_total)+' t &middot; '+p.n_eq_last+' equip.</div></div>';
-    kpiHtml += '<div class="kpi"><div class="kl">Equip. ativos</div><div class="kv">'+s.num_equipamentos+'</div><div class="ks">'+s.equipamentos.slice(0,2).join(', ')+(s.num_equipamentos>2?' ...':'')+'</div></div>';
-    kpiHtml += '<div class="kpi"><div class="kl">t/Equip-Dia acum.</div><div class="kv">'+fmt(p.prod_acum_per_eq_dia)+'</div><div class="ks">Eficiencia ponderada</div></div>';
-    kpiHtml += '<div class="kpi"><div class="kl">Top equipamento</div><div class="kv" style="font-size:15px;padding-top:2px">'+(top?top[0]:'--')+'</div><div class="ks">'+fmt(top?top[1].prod:0)+' t acumuladas</div></div>';
+    kpiHtml += '<div class="kpi"><div class="kl">Equip. ativos</div><div class="kv">'+s.num_equipamentos+'</div><div class="ks">'+(s.equipamentos||[]).slice(0,2).join(', ')+((s.num_equipamentos||0)>2?' ...':'')+'</div></div>';
+    kpiHtml += '<div class="kpi"><div class="kl">t/Equip-Dia acum.</div><div class="kv">'+fmt(c.tED)+'</div><div class="ks">Ponderado &middot; '+mLabel2+' 2026</div></div>';
+    kpiHtml += '<div class="kpi"><div class="kl">Top equipamento</div><div class="kv" style="font-size:15px;padding-top:2px">'+(topEs||'--')+'</div><div class="ks">'+fmt(eqProd2[topEs]||0)+' t no periodo</div></div>';
   }
   document.getElementById('kpi-bar').innerHTML = kpiHtml;
 }
@@ -537,7 +578,7 @@ function buildPills(id, sel, fn) {
 }
 
 function tgM(arr,m) { var r=arr.includes(m)?arr.filter(function(x){return x!==m;}):[...arr,m].sort(function(a,b){return a-b;}); return r.length?r:arr; }
-function tgObra(m) { mObra=tgM(mObra,m); buildPills('pills-obra',mObra,'tgObra'); renderObra(); }
+function tgObra(m) { mObra=tgM(mObra,m); buildPills('pills-obra',mObra,'tgObra'); updateKPIs(); renderObra(); }
 function tgEq(m) { mEq=tgM(mEq,m); buildPills('pills-eq',mEq,'tgEq'); renderEq(); }
 function tgCmp(m) { mCmp=tgM(mCmp,m); buildPills('pills-cmp',mCmp,'tgCmp'); renderCMP(); }
 
