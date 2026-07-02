@@ -336,7 +336,10 @@ var ML = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',7:'Jul',8:'Ago',9:'Set
 var MESES = (function() {
   var set = {};
   Object.values(D.obra_mensal).forEach(function(mMap) {
-    Object.keys(mMap).forEach(function(m) { set[parseInt(m)] = 1; });
+    Object.keys(mMap).forEach(function(m) {
+      var v = mMap[m];
+      if((v.prod||0) > 0 || (v.n_dias||0) > 0) set[parseInt(m)] = 1;
+    });
   });
   return Object.keys(set).map(Number).sort(function(a,b){return a-b;});
 })();
