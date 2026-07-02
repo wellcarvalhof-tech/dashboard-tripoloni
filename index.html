@@ -331,15 +331,22 @@ var OS = {
   'OBRA 424 - PITANGA':'424 PITANGA','OBRA 425 - MGA':'425 MGA','OBRA 426 - PARAPU':'426 PARAPU',
   'OBRA 427 - PALMEIRA':'427 PALMEIRA','OBRA 429 - IRAT':'429 IRAT'
 };
-var ML = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun'};
-var MESES = [1,2,3,4,5,6];
+var ML = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'};
+// Deriva meses disponíveis dinamicamente dos dados
+var MESES = (function() {
+  var set = {};
+  Object.values(D.obra_mensal).forEach(function(mMap) {
+    Object.keys(mMap).forEach(function(m) { set[parseInt(m)] = 1; });
+  });
+  return Object.keys(set).map(Number).sort(function(a,b){return a-b;});
+})();
 var COLS = ['#1A5276','#0E6655','#B7770D','#6C3483','#117A65','#922B21','#1B4F72','#784212','#1A7A4A','#5B2C6F'];
 
 var selObra = 'ALL';
 var selEqObra = ['ALL']; // array de equipamentos selecionados na aba Producao da Obra
 var selEqDet = [];       // array de equipamentos selecionados na aba Por Equipamento
 var selEqSC = ['ALL'];   // array de equipamentos selecionados na aba Avanco Acumulado
-var mObra=[1,2,3,4,5,6], mEq=[1,2,3,4,5,6], mCmp=[1,2,3,4,5,6];
+var mObra=MESES.slice(), mEq=MESES.slice(), mCmp=MESES.slice();
 var vObra='diario', vEq='diario', scMode='obra', cmpMetric='prod';
 var CH = {};
 // Flags de filtro por aba (reativas ao periodo selecionado)
