@@ -52,6 +52,16 @@ select,input[type=date]{font-size:11px;padding:5px 8px;border:1px solid #DDE1E9;
 .gen-btn{background:#16297A;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;margin-left:auto}
 .body{padding:16px 20px}
 
+/* Seletor multiplo de escavadeiras */
+.msel{position:relative;display:inline-block}
+.msel-btn{font-size:11px;padding:5px 10px;border:1px solid #DDE1E9;border-radius:5px;background:#fff;color:#1A1F2E;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-family:inherit}
+.msel-btn:after{content:'▾';font-size:9px;color:#6B7280}
+.msel-panel{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:#fff;border:1px solid #DDE1E9;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.12);padding:6px;min-width:170px;max-height:240px;overflow-y:auto}
+.msel-panel.open{display:block}
+.msel-opt{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:4px;cursor:pointer;font-size:11px;white-space:nowrap;color:#374151}
+.msel-opt:hover{background:#F1F3F5}
+.msel-opt input{cursor:pointer;accent-color:#16297A}
+
 /* ── RELATÓRIO ── */
 #report{background:#fff;border:1px solid #DDE1E9;border-radius:8px;overflow:hidden;max-width:1200px;margin:0 auto}
 
@@ -92,11 +102,6 @@ select,input[type=date]{font-size:11px;padding:5px 8px;border:1px solid #DDE1E9;
 .chart-canvas-wrap{position:relative;height:260px}
 .chart-canvas-wrap.tall{height:320px}
 .chart-canvas-wrap canvas{width:100%!important;height:100%!important}
-
-/* Filtros de equipamento no relatório */
-.eq-filter{padding:0 18px 8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.eq-pill{padding:2px 8px;font-size:10px;border:1px solid #DDE1E9;border-radius:10px;cursor:pointer;background:#fff;color:#6B7280;user-select:none;font-family:inherit}
-.eq-pill.on{background:#16297A;color:#fff;border-color:#16297A}
 
 /* Tabela */
 .tbl-wrap{padding:0 18px 16px}
@@ -145,7 +150,6 @@ tr.tot td{font-weight:700;background:#F0F4FF;border-top:2px solid #D0D9F0}
   .gp{background:#D1FAE5!important;color:#065F46!important}
   .wp{background:#FEF3C7!important;color:#92400E!important}
   .rp{background:#FEE2E2!important;color:#991B1B!important}
-  .eq-filter{display:none!important}
   @page{size:A4 landscape;margin:5mm}
 }
 </style>
@@ -186,6 +190,12 @@ tr.tot td{font-weight:700;background:#F0F4FF;border-top:2px solid #D0D9F0}
     <label class="chk"><input type="checkbox" id="chk-m320" checked onchange="renderReport()"> 320</label>
     <label class="chk"><input type="checkbox" id="chk-m336" checked onchange="renderReport()"> 336</label>
     <label class="chk"><input type="checkbox" id="chk-m349" checked onchange="renderReport()"> 349</label>
+    <div class="vsep"></div>
+    <span class="cl">Escavadeiras:</span>
+    <span class="msel" id="msel-eqs">
+      <button type="button" class="msel-btn" onclick="mselToggle('msel-eqs')" id="msel-eqs-btn">Todas</button>
+      <div class="msel-panel" id="msel-eqs-panel"></div>
+    </span>
     <button class="gen-btn" onclick="renderReport()">↺ Atualizar relatório</button>
   </div>
 </div>
@@ -296,19 +306,59 @@ function onDateChange(){
   renderReport();
 }
 
-function toggleEq(es){
-  if(!selEqs) return; // todos ativo — não tem como desmarcar sem inicializar
-  var i=selEqs.indexOf(es);
-  if(i===-1) selEqs.push(es);
-  else selEqs.splice(i,1);
-  if(!selEqs.length) selEqs=null;
+// ── SELETOR MULTIPLO DE ESCAVADEIRAS (msel) ──────────────────────────────────
+function mselLabel(sel, eqs){
+  if(sel===null||sel.length===eqs.length) return 'Todas';
+  if(!sel.length) return 'Nenhuma';
+  if(sel.length===1) return sel[0];
+  return sel.length+' escavadeiras';
+}
+
+function buildEqMsel(eqs){
+  var panel=document.getElementById('msel-eqs-panel');
+  var btn=document.getElementById('msel-eqs-btn');
+  if(!panel||!btn) return;
+  btn.textContent=mselLabel(selEqs,eqs);
+  var html='<label class="msel-opt"><input type="checkbox" '+(selEqs===null?'checked':'')+' onchange="mselEqPickAll(this.checked)"> Todas as escavadeiras</label>';
+  eqs.forEach(function(es){
+    var checked=selEqs===null||selEqs.indexOf(es)!==-1;
+    html+='<label class="msel-opt"><input type="checkbox" '+(checked?'checked':'')+' onchange="mselEqPick(\''+es+'\',this.checked)"> '+es+'</label>';
+  });
+  panel.innerHTML=html;
+  panel.dataset.eqs=JSON.stringify(eqs);
+}
+
+function mselEqPickAll(checked){
+  var panel=document.getElementById('msel-eqs-panel');
+  var eqs=JSON.parse(panel.dataset.eqs||'[]');
+  selEqs=checked?null:[];
+  buildEqMsel(eqs);
   renderReport();
 }
 
-function toggleAllEqs(allEqsList){
-  if(selEqs===null){selEqs=[];} else {selEqs=null;}
+function mselEqPick(es,checked){
+  var panel=document.getElementById('msel-eqs-panel');
+  var eqs=JSON.parse(panel.dataset.eqs||'[]');
+  var sel=selEqs===null?eqs.slice():selEqs.slice();
+  if(checked){ if(sel.indexOf(es)===-1) sel.push(es); }
+  else{ sel=sel.filter(function(x){return x!==es;}); }
+  selEqs=(sel.length===eqs.length)?null:sel;
+  buildEqMsel(eqs);
   renderReport();
 }
+
+function mselToggle(baseId){
+  var panel=document.getElementById(baseId+'-panel');
+  var isOpen=panel.classList.contains('open');
+  document.querySelectorAll('.msel-panel.open').forEach(function(p){p.classList.remove('open');});
+  if(!isOpen) panel.classList.add('open');
+}
+
+document.addEventListener('click', function(e){
+  if(!e.target.closest('.msel')){
+    document.querySelectorAll('.msel-panel.open').forEach(function(p){p.classList.remove('open');});
+  }
+});
 
 // ── COMPUTE ──────────────────────────────────────────────────────────────────
 function compute(){
@@ -436,17 +486,8 @@ function renderReport(){
   html+='<div class="kc"><div class="kl">Utilização média</div><div class="kv">'+fd(calc.totUtil)+'%</div><div class="ks">Trab / disponível</div></div>';
   html+='</div>';
 
-  // Pills de equipamento (filtro visual no relatório)
-  if(calc.allEqs.length>0){
-    html+='<div class="eq-filter screen-only">';
-    html+='<span style="font-size:9px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.06em">Equipamentos:</span>';
-    html+='<button class="eq-pill'+(selEqs===null?' on':'')+'" onclick="toggleAllEqs('+JSON.stringify(calc.allEqs)+')">Todos</button>';
-    calc.allEqs.forEach(function(es){
-      var on=selEqs===null||selEqs.indexOf(es)!==-1;
-      html+='<button class="eq-pill'+(on?' on':'')+'" onclick="toggleEq(\''+es+'\')">'+es+'</button>';
-    });
-    html+='</div>';
-  }
+  // Atualiza o dropdown de escavadeiras no painel de filtros do topo
+  buildEqMsel(calc.allEqs);
 
   // Gráficos
   var nCharts=[showProd,showHrs,showEq,showAcum].filter(Boolean).length;
