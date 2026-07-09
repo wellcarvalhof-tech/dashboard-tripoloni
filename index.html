@@ -984,21 +984,42 @@ function renderLastDayAll() {
     if(cardExtra2) cardExtra2.style.display = 'none';
   }
 
-  // Table 2: ACUMULADO por obra
+  // Table 2: ACUMULADO por obra (respeita periodo/exclusao/modelo, igual renderAccumTable)
   var thA = hd(th('Obra')+th('Equip.','r')+th('Prod. Acumulada (t)','r')+th('Hrs Trab.','r')+th('Hrs Ociosas','r')+th('Dias Apont.','r')+th('Equip-Dias','r')+th('t/Equip-Dia','r')+th('Prod/H Acum. (t/h)','r')+th('Utilizacao'));
+  var weekStartA = getWeekStart(), monthStartA = getMonthStart();
+  function inRangeA(d) {
+    if(accumPeriod === 'week')   return weekStartA  && d >= weekStartA;
+    if(accumPeriod === 'month')  return monthStartA && d.startsWith(monthStartA);
+    if(accumPeriod === 'custom' && accumDtStart && accumDtEnd) return d >= accumDtStart && d <= accumDtEnd;
+    return true;
+  }
   var accumRows = D.obras.map(function(o) {
-    var p = D.obra_ponderado[o] || {};
-    var s = D.obra_summary[o] || {};
-    return { obra:o, prod:p.prod_total||0, hrs:s.hrs_total||0, oc:s.oc_total||0,
-             dias:p.dias_apont||0, eqDias:p.total_eq_dias||0,
-             tEqDia:p.prod_acum_per_eq_dia||0, nEq:s.num_equipamentos||0 };
+    var eqMap = D.daily_obra_eq[o] || {};
+    var eqs = filtrarPorModelo(Object.keys(eqMap), modelosLD);
+    var prod=0, hrs=0, oc=0, diasSet={}, eqDias=0, nEq=0;
+    eqs.forEach(function(es) {
+      var days = eqMap[es] || {};
+      var eqHasData = false;
+      Object.keys(days).forEach(function(d) {
+        if(!inRangeA(d)) return;
+        var dProd = days[d].prod||0, dHrs = days[d].hrs||0, dOc = days[d].oc||0;
+        if(fHrsLD && dHrs === 0 && dProd === 0) return;
+        if(fProdLD && dProd === 0) return;
+        prod += dProd; hrs += dHrs; oc += dOc;
+        if(dProd > 0) { diasSet[d]=1; eqDias++; eqHasData=true; }
+        else if(dHrs>0 || dOc>0) { eqHasData=true; }
+      });
+      if(eqHasData) nEq++;
+    });
+    var dias = Object.keys(diasSet).length;
+    return { obra:o, prod:prod, hrs:hrs, oc:oc, dias:dias, eqDias:eqDias,
+             tEqDia: eqDias>0 ? prod/eqDias : 0, nEq:nEq };
   }).sort(function(a,b){return b.prod-a.prod;});
-  var rows2='', totAP=0, totAH=0, totAO=0, totAD=0, totAED=0;
-  var maxAccProd = Math.max.apply(null, accumRows.map(function(r){return r.prod;}).concat([1]));
+  var rows2='', totAP=0, totAH=0, totAO=0, totAED=0;
   accumRows.forEach(function(r) {
     var u = r.hrs/(r.hrs+r.oc)*100||0;
     var ph = r.hrs>0 ? r.prod/r.hrs : 0;
-    totAP+=r.prod; totAH+=r.hrs; totAO+=r.oc; totAD+=r.dias; totAED+=r.eqDias;
+    totAP+=r.prod; totAH+=r.hrs; totAO+=r.oc; totAED+=r.eqDias;
     rows2 += '<tr>';
     rows2 += '<td style="font-weight:600">'+(OS[r.obra]||r.obra)+'</td>';
     rows2 += '<td class="r">'+r.nEq+'</td>';
