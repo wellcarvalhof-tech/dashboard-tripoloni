@@ -47,6 +47,10 @@ body{font-family:system-ui,sans-serif;background:#F4F6FA;color:#1A1F2E;font-size
 select,input[type=date]{font-size:11px;padding:5px 8px;border:1px solid #DDE1E9;border-radius:5px;background:#fff;color:#1A1F2E}
 .mpill{padding:4px 10px;font-size:11px;border:1px solid #DDE1E9;border-radius:12px;cursor:pointer;background:#fff;color:#6B7280;white-space:nowrap;user-select:none;font-family:inherit}
 .mpill.on{background:#16297A;color:#fff;border-color:#16297A}
+.seg-toggle{display:flex;border:1px solid #DDE1E9;border-radius:6px;overflow:hidden}
+.seg-btn{padding:5px 10px;font-size:11px;border:none;background:#fff;color:#6B7280;cursor:pointer;font-family:inherit}
+.seg-btn+.seg-btn{border-left:1px solid #DDE1E9}
+.seg-btn.on{background:#16297A;color:#fff}
 .chk{display:flex;align-items:center;gap:5px;font-size:11px;color:#374151;cursor:pointer;white-space:nowrap}
 .chk input{accent-color:#16297A;width:13px;height:13px}
 .gen-btn{background:#16297A;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;margin-left:auto}
@@ -169,8 +173,13 @@ tr.tot td{font-weight:700;background:#F0F4FF;border-top:2px solid #D0D9F0}
     <span class="cl">Obra:</span>
     <select id="sel-obra" onchange="onObraChange()"></select>
     <div class="vsep"></div>
-    <span class="cl">Meses:</span>
+    <span class="cl">Período:</span>
+    <div class="seg-toggle">
+      <button type="button" class="seg-btn on" id="btn-modo-mes" onclick="setModoTempo('mes')">Mês</button>
+      <button type="button" class="seg-btn" id="btn-modo-semana" onclick="setModoTempo('semana')">Semana</button>
+    </div>
     <div id="pill-meses" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+    <select id="sel-semana" style="display:none" onchange="onSemanaChange()"></select>
     <div class="vsep"></div>
     <span class="cl">Personalizado:</span>
     <input type="date" id="dt-start" onchange="onDateChange()">
@@ -233,6 +242,27 @@ var MESES_ALL = (function(){
   });
   return Object.keys(set).sort();
 })();
+var SEMANAS_ALL = (function(){
+  var set={};
+  Object.values(D.daily_obra_eq).forEach(function(eqs){
+    Object.values(eqs).forEach(function(days){
+      Object.keys(days).forEach(function(d){
+        var dt=new Date(d+'T00:00:00');
+        var wd=dt.getDay(); // 0=dom..6=sab
+        var mon=new Date(dt); mon.setDate(dt.getDate()+(wd===0?-6:1-wd));
+        set[mon.toISOString().slice(0,10)]=1;
+      });
+    });
+  });
+  return Object.keys(set).sort();
+})();
+function semanaLabel(monStr){
+  var mon=new Date(monStr+'T00:00:00');
+  var sun=new Date(mon); sun.setDate(mon.getDate()+6);
+  var fmt=function(dt){return String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0');};
+  return fmt(mon)+' a '+fmt(sun);
+}
+var modoTempo = 'mes';
 var selMeses = MESES_ALL.slice(-2); // default: 2 meses mais recentes
 var dtStart = '', dtEnd = '';
 var selEqs = null; // null = todos
@@ -283,6 +313,45 @@ function toggleMes(m,btn){
   dtStart='';dtEnd='';
   document.getElementById('dt-start').value='';
   document.getElementById('dt-end').value='';
+  selEqs=null;
+  renderReport();
+}
+
+function setModoTempo(m){
+  modoTempo=m;
+  document.getElementById('btn-modo-mes').classList.toggle('on', m==='mes');
+  document.getElementById('btn-modo-semana').classList.toggle('on', m==='semana');
+  document.getElementById('pill-meses').style.display = m==='mes' ? 'flex' : 'none';
+  var selSemana=document.getElementById('sel-semana');
+  selSemana.style.display = m==='semana' ? 'inline-block' : 'none';
+  if(m==='semana'){
+    if(!selSemana.dataset.built){
+      var html='';
+      SEMANAS_ALL.forEach(function(monStr,i){
+        html+='<option value="'+monStr+'">Semana '+(i+1)+' · '+semanaLabel(monStr)+'</option>';
+      });
+      selSemana.innerHTML=html;
+      selSemana.dataset.built='1';
+      selSemana.value=SEMANAS_ALL[SEMANAS_ALL.length-1];
+    }
+    onSemanaChange();
+  } else {
+    dtStart='';dtEnd='';
+    document.getElementById('dt-start').value='';
+    document.getElementById('dt-end').value='';
+    selEqs=null;
+    renderReport();
+  }
+}
+
+function onSemanaChange(){
+  var mon=document.getElementById('sel-semana').value;
+  var monDt=new Date(mon+'T00:00:00');
+  var sunDt=new Date(monDt); sunDt.setDate(monDt.getDate()+6);
+  dtStart=mon;
+  dtEnd=sunDt.toISOString().slice(0,10);
+  document.getElementById('dt-start').value=dtStart;
+  document.getElementById('dt-end').value=dtEnd;
   selEqs=null;
   renderReport();
 }
