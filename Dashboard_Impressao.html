@@ -179,7 +179,7 @@ tr.tot td{font-weight:700;background:#F0F4FF;border-top:2px solid #D0D9F0}
       <button type="button" class="seg-btn" id="btn-modo-semana" onclick="setModoTempo('semana')">Semana</button>
     </div>
     <div id="pill-meses" style="display:flex;gap:4px;flex-wrap:wrap"></div>
-    <select id="sel-semana" style="display:none" onchange="onSemanaChange()"></select>
+    <div id="pill-semanas" style="display:none;gap:4px;flex-wrap:wrap;max-width:420px"></div>
     <div class="vsep"></div>
     <span class="cl">Personalizado:</span>
     <input type="date" id="dt-start" onchange="onDateChange()">
@@ -262,8 +262,31 @@ function semanaLabel(monStr){
   var fmt=function(dt){return String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0');};
   return fmt(mon)+' a '+fmt(sun);
 }
+function weekMonday(d){
+  var dt=new Date(d+'T00:00:00');
+  var wd=dt.getDay(); // 0=dom..6=sab
+  var mon=new Date(dt); mon.setDate(dt.getDate()+(wd===0?-6:1-wd));
+  return mon.toISOString().slice(0,10);
+}
+function aggregateByWeek(dates, dailyMap){
+  var buckets={};
+  dates.forEach(function(d){
+    var key=weekMonday(d);
+    if(!buckets[key]) buckets[key]={prod:0,hrs:0,oc:0};
+    var v=dailyMap[d];
+    buckets[key].prod+=v.prod; buckets[key].hrs+=v.hrs; buckets[key].oc+=v.oc;
+  });
+  var keys=Object.keys(buckets).sort();
+  return {
+    labels:keys.map(function(k){return semanaLabel(k);}),
+    prod:keys.map(function(k){return Math.round(buckets[k].prod);}),
+    hrs:keys.map(function(k){return buckets[k].hrs;}),
+    oc:keys.map(function(k){return buckets[k].oc;})
+  };
+}
 var modoTempo = 'mes';
 var selMeses = MESES_ALL.slice(-2); // default: 2 meses mais recentes
+var selSemanas = SEMANAS_ALL.slice(-4); // default: 4 semanas mais recentes
 var dtStart = '', dtEnd = '';
 var selEqs = null; // null = todos
 var CHARTS = {};
@@ -274,6 +297,7 @@ function fd(n,d){if(n==null||isNaN(n))return '--';return n.toFixed(d!=null?d:1);
 
 function inRange(d){
   if(dtStart&&dtEnd) return d>=dtStart&&d<=dtEnd;
+  if(modoTempo==='semana') return selSemanas.indexOf(weekMonday(d))!==-1;
   return selMeses.indexOf(d.slice(0,7))!==-1;
 }
 
@@ -322,36 +346,33 @@ function setModoTempo(m){
   document.getElementById('btn-modo-mes').classList.toggle('on', m==='mes');
   document.getElementById('btn-modo-semana').classList.toggle('on', m==='semana');
   document.getElementById('pill-meses').style.display = m==='mes' ? 'flex' : 'none';
-  var selSemana=document.getElementById('sel-semana');
-  selSemana.style.display = m==='semana' ? 'inline-block' : 'none';
-  if(m==='semana'){
-    if(!selSemana.dataset.built){
-      var html='';
-      SEMANAS_ALL.forEach(function(monStr,i){
-        html+='<option value="'+monStr+'">Semana '+(i+1)+' · '+semanaLabel(monStr)+'</option>';
-      });
-      selSemana.innerHTML=html;
-      selSemana.dataset.built='1';
-      selSemana.value=SEMANAS_ALL[SEMANAS_ALL.length-1];
-    }
-    onSemanaChange();
-  } else {
-    dtStart='';dtEnd='';
-    document.getElementById('dt-start').value='';
-    document.getElementById('dt-end').value='';
-    selEqs=null;
-    renderReport();
+  var pillSemanas=document.getElementById('pill-semanas');
+  pillSemanas.style.display = m==='semana' ? 'flex' : 'none';
+  if(m==='semana' && !pillSemanas.dataset.built){
+    var html='';
+    SEMANAS_ALL.forEach(function(monStr){
+      html+='<button type="button" class="mpill'+(selSemanas.indexOf(monStr)!==-1?' on':'')+'" data-mon="'+monStr+'" onclick="toggleSemana(\''+monStr+'\',this)">'+semanaLabel(monStr).split(' a ')[0]+'</button>';
+    });
+    pillSemanas.innerHTML=html;
+    pillSemanas.dataset.built='1';
   }
+  dtStart='';dtEnd='';
+  document.getElementById('dt-start').value='';
+  document.getElementById('dt-end').value='';
+  selEqs=null;
+  renderReport();
 }
 
-function onSemanaChange(){
-  var mon=document.getElementById('sel-semana').value;
-  var monDt=new Date(mon+'T00:00:00');
-  var sunDt=new Date(monDt); sunDt.setDate(monDt.getDate()+6);
-  dtStart=mon;
-  dtEnd=sunDt.toISOString().slice(0,10);
-  document.getElementById('dt-start').value=dtStart;
-  document.getElementById('dt-end').value=dtEnd;
+function toggleSemana(monStr,btn){
+  var i=selSemanas.indexOf(monStr);
+  if(i===-1){selSemanas.push(monStr);btn.classList.add('on');}
+  else{selSemanas.splice(i,1);btn.classList.remove('on');}
+  if(!selSemanas.length){
+    selSemanas=SEMANAS_ALL.slice(-4);
+    document.querySelectorAll('#pill-semanas .mpill').forEach(function(b){
+      b.classList.toggle('on', selSemanas.indexOf(b.dataset.mon)!==-1);
+    });
+  }
   selEqs=null;
   renderReport();
 }
@@ -525,6 +546,11 @@ function renderReport(){
   var periodoLabel='';
   if(dtStart&&dtEnd){
     periodoLabel=dtStart.split('-').reverse().join('/')+' a '+dtEnd.split('-').reverse().join('/');
+  } else if(modoTempo==='semana'){
+    var sortedSem=selSemanas.slice().sort();
+    periodoLabel=sortedSem.length
+      ? sortedSem.map(function(m){return semanaLabel(m);}).join(', ')+' ('+sortedSem.length+' semana'+(sortedSem.length>1?'s':'')+')'
+      : 'Nenhuma semana selecionada';
   } else {
     periodoLabel=selMeses.map(function(m){return ML[m];}).join(', ')+' 2026';
   }
@@ -563,8 +589,10 @@ function renderReport(){
   if(nCharts>0){
     var gridStyle=nCharts===1?'grid-template-columns:1fr':nCharts===2?'grid-template-columns:1fr 1fr':'grid-template-columns:1fr 1fr';
     html+='<div class="charts-area"><div class="charts-grid" style="'+gridStyle+'">';
-    if(showProd) html+='<div class="chart-box'+(nCharts===1?' full':'')+'"><div class="ctitle">Produção diária (t)</div><div class="chart-canvas-wrap'+(nCharts<=2?' tall':'')+'"><canvas id="ch-prod"></canvas></div></div>';
-    if(showHrs)  html+='<div class="chart-box'+(nCharts===1?' full':'')+'"><div class="ctitle">Horas trabalhadas vs ociosas (%)</div><div class="chart-canvas-wrap'+(nCharts<=2?' tall':'')+'"><canvas id="ch-hrs"></canvas></div></div>';
+    var prodTitle=modoTempo==='semana'?'Produção semanal (t)':'Produção diária (t)';
+    var hrsTitle=modoTempo==='semana'?'Horas trabalhadas vs ociosas (%) — semanal':'Horas trabalhadas vs ociosas (%)';
+    if(showProd) html+='<div class="chart-box'+(nCharts===1?' full':'')+'"><div class="ctitle">'+prodTitle+'</div><div class="chart-canvas-wrap'+(nCharts<=2?' tall':'')+'"><canvas id="ch-prod"></canvas></div></div>';
+    if(showHrs)  html+='<div class="chart-box'+(nCharts===1?' full':'')+'"><div class="ctitle">'+hrsTitle+'</div><div class="chart-canvas-wrap'+(nCharts<=2?' tall':'')+'"><canvas id="ch-hrs"></canvas></div></div>';
     if(showEq)   html+='<div class="chart-box'+(nCharts===1?' full':'')+'"><div class="ctitle">Produção por equipamento (t)</div><div class="chart-canvas-wrap'+(nCharts<=2?' tall':'')+'"><canvas id="ch-eq"></canvas></div></div>';
     if(showAcum) html+='<div class="chart-box'+(nCharts===1?' full':'')+'"><div class="ctitle">Avanço acumulado (t)</div><div class="chart-canvas-wrap'+(nCharts<=2?' tall':'')+'"><canvas id="ch-acum"></canvas></div></div>';
     html+='</div></div>';
@@ -625,13 +653,15 @@ function buildCharts(calc,showProd,showHrs,showEq,showAcum,nCharts){
   var fmtK=function(v){return v>=1000?(v/1000).toFixed(0)+'k':v;};
   var isTall=nCharts<=2;
   var COLS=['#16297A','#0E6655','#B7770D','#D35400','#993556','#534AB7','#2980B9','#8E44AD','#1A7A4A','#C0392B'];
+  var wk=modoTempo==='semana'?aggregateByWeek(dates,dailyMap):null;
+  var chartLabels=wk?wk.labels:labels;
 
   if(showProd&&document.getElementById('ch-prod')){
-    var prodData=dates.map(function(d){return Math.round(dailyMap[d].prod);});
+    var prodData=wk?wk.prod.slice():dates.map(function(d){return Math.round(dailyMap[d].prod);});
     var maxP=Math.max.apply(null,prodData.concat([1]));
     CHARTS['prod']=new Chart(document.getElementById('ch-prod'),{
       type:'bar',
-      data:{labels:labels,datasets:[{
+      data:{labels:chartLabels,datasets:[{
         data:prodData,
         backgroundColor:'#16297Acc',
         borderWidth:0
@@ -662,11 +692,17 @@ function buildCharts(calc,showProd,showHrs,showEq,showAcum,nCharts){
   }
 
   if(showHrs&&document.getElementById('ch-hrs')){
-    var hrsD=dates.map(function(d){var v=dailyMap[d],t=v.hrs+v.oc;return t>0?+(v.hrs/t*100).toFixed(1):0;});
-    var ocD=dates.map(function(d){var v=dailyMap[d],t=v.hrs+v.oc;return t>0?+(v.oc/t*100).toFixed(1):0;});
+    var hrsD,ocD;
+    if(wk){
+      hrsD=wk.hrs.map(function(h,i){var t=h+wk.oc[i];return t>0?+(h/t*100).toFixed(1):0;});
+      ocD=wk.oc.map(function(o,i){var t=wk.hrs[i]+o;return t>0?+(o/t*100).toFixed(1):0;});
+    } else {
+      hrsD=dates.map(function(d){var v=dailyMap[d],t=v.hrs+v.oc;return t>0?+(v.hrs/t*100).toFixed(1):0;});
+      ocD=dates.map(function(d){var v=dailyMap[d],t=v.hrs+v.oc;return t>0?+(v.oc/t*100).toFixed(1):0;});
+    }
     CHARTS['hrs']=new Chart(document.getElementById('ch-hrs'),{
       type:'bar',
-      data:{labels:labels,datasets:[
+      data:{labels:chartLabels,datasets:[
         {label:'Trabalhadas %',data:hrsD,backgroundColor:'#1D9E75cc',stack:'s'},
         {label:'Ociosas %',data:ocD,backgroundColor:'#EF9F27cc',stack:'s'}
       ]},
