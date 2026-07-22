@@ -101,7 +101,7 @@ select,input[type=date]{font-size:11px;padding:5px 8px;border:1px solid #DDE1E9;
 .charts-grid{display:grid;gap:12px;grid-template-columns:1fr 1fr}
 .chart-box{border:1px solid #E5E8EF;border-radius:7px;padding:12px 14px}
 .chart-box.full{grid-column:1/-1}
-.ctitle{font-size:11px;font-weight:700;color:#16297A;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.ctitle{font-size:13px;font-weight:700;color:#16297A;margin-bottom:10px;display:flex;align-items:center;gap:6px}
 .ctitle::before{content:'';width:7px;height:7px;border-radius:50%;background:#16297A;flex-shrink:0}
 .chart-canvas-wrap{position:relative;height:260px}
 .chart-canvas-wrap.tall{height:320px}
@@ -674,7 +674,7 @@ function buildCharts(calc,showProd,showHrs,showEq,showAcum,nCharts){
           datalabels:{
             anchor:'end',align:'end',
             formatter:function(v){return v>=1000?(v/1000).toFixed(1)+'k':v;},
-            font:{size:8,weight:'bold'},
+            font:{size:13,weight:'bold'},
             color:'#16297A',
             display:function(ctx){
               var v=ctx.dataset.data[ctx.dataIndex];
@@ -683,8 +683,8 @@ function buildCharts(calc,showProd,showHrs,showEq,showAcum,nCharts){
           }
         },
         scales:{
-          x:{ticks:{font:{size:7},maxRotation:45,autoSkip:true,maxTicksLimit:isTall?30:20}},
-          y:{ticks:{font:{size:8},callback:fmtK},grid:{color:'#F0F2F7'}}
+          x:{ticks:{font:{size:11},maxRotation:45,autoSkip:true,maxTicksLimit:isTall?30:20}},
+          y:{ticks:{font:{size:11},callback:fmtK},grid:{color:'#F0F2F7'}}
         }
       },
       plugins:[ChartDataLabels]
@@ -709,10 +709,10 @@ function buildCharts(calc,showProd,showHrs,showEq,showAcum,nCharts){
       options:{
         responsive:true,maintainAspectRatio:false,
         plugins:{
-          legend:{display:true,position:'top',labels:{font:{size:9},boxWidth:10}},
+          legend:{display:true,position:'top',labels:{font:{size:12},boxWidth:12}},
           datalabels:{
             formatter:function(v){return v>=10?v.toFixed(0)+'%':'';},
-            font:{size:8,weight:'bold'},
+            font:{size:13,weight:'bold'},
             color:'#fff',
             anchor:'center',align:'center',
             display:function(ctx){
@@ -722,8 +722,8 @@ function buildCharts(calc,showProd,showHrs,showEq,showAcum,nCharts){
           }
         },
         scales:{
-          x:{stacked:true,ticks:{font:{size:7},maxRotation:45,autoSkip:true,maxTicksLimit:isTall?30:20}},
-          y:{stacked:true,max:100,ticks:{font:{size:8},callback:function(v){return v+'%';}},grid:{color:'#F0F2F7'}}
+          x:{stacked:true,ticks:{font:{size:11},maxRotation:45,autoSkip:true,maxTicksLimit:isTall?30:20}},
+          y:{stacked:true,max:100,ticks:{font:{size:11},callback:function(v){return v+'%';}},grid:{color:'#F0F2F7'}}
         }
       },
       plugins:[ChartDataLabels]
